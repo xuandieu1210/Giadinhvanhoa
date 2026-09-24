@@ -1,0 +1,6 @@
+{
+  "name": "Phần mềm Bình xét Văn hóa",
+  "description": "Hệ thống quản lý và bình xét danh hiệu văn hóa cho hộ gia đình, thôn/tổ và tộc họ cấp cơ sở.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
