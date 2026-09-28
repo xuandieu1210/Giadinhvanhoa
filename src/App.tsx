@@ -12,6 +12,7 @@ import { ReportsView } from './components/views/ReportsView';
 import { ScoringView } from './components/views/ScoringView';
 import { UnitsView } from './components/views/UnitsView';
 import { UsersView } from './components/views/UsersView';
+import { CommunesView } from './components/views/CommunesView';
 import { AppProvider, useApp } from './context/AppContext';
 
 const MainLayout: React.FC = () => {
@@ -64,6 +65,7 @@ const MainLayout: React.FC = () => {
               {activeTab === 'clans' && <ClansView />}
               {activeTab === 'households' && <HouseholdsView />}
               {activeTab === 'users' && <UsersView />}
+              {activeTab === 'communes' && <CommunesView />}
             </>
           )}
         </main>

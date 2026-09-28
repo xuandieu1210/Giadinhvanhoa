@@ -54,6 +54,7 @@ export const ApprovalView: React.FC = () => {
     updateUnitReportFiles,
     currentUser,
     selectedCommune,
+    terms,
   } = useApp();
 
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
@@ -75,6 +76,13 @@ export const ApprovalView: React.FC = () => {
   // Batch scoring for commune
   const [selectedHhIds, setSelectedHhIds] = useState<string[]>([]);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Always bind activeUnit to the currently filtered units of the selected commune
   const activeUnit = units.find((u) => u.id === selectedUnit?.id) || units[0] || null;
@@ -95,9 +103,9 @@ export const ApprovalView: React.FC = () => {
     return (
       <div className="bg-white p-8 rounded-xl border border-amber-200 text-center max-w-lg mx-auto space-y-3">
         <AlertCircle className="w-12 h-12 text-amber-600 mx-auto" />
-        <h3 className="text-base font-bold text-slate-800">Quyền hạn Cấp Xã / Phường</h3>
+        <h3 className="text-base font-bold text-slate-800">Quyền hạn {terms.communeApproval}</h3>
         <p className="text-xs text-slate-500">
-          Chức năng Thẩm định & Duyệt chốt dữ liệu văn hóa chỉ dành cho Cán bộ Xã/Phường và Ban chỉ đạo cấp xã.
+          Chức năng Thẩm định & Duyệt chốt dữ liệu văn hóa chỉ dành cho {terms.communeOfficer} và Ban chỉ đạo {terms.communeApprovalLower}.
         </p>
       </div>
     );
@@ -161,20 +169,14 @@ export const ApprovalView: React.FC = () => {
 
   const handleQuickPassForUnit = () => {
     if (!activeUnit) return;
-    if (
-      window.confirm(
-        `Thực hiện "Chấm nhanh đạt (>= 90đ)" cho toàn bộ hộ và thôn/tổ "${activeUnit.name}" theo thẩm quyền cấp Xã?`
-      )
-    ) {
-      const res = quickPassUnit(activeUnit.id, selectedPeriodId);
-      alert(res.message);
-    }
+    const res = quickPassUnit(activeUnit.id, selectedPeriodId);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
   };
 
   const handleConfirmApprovalAndLock = () => {
     if (!activeUnit) return;
     const res = approveAndLockUnit(activeUnit.id, selectedPeriodId, approvalNotes);
-    alert(res.message);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
     setIsApproveModalOpen(false);
   };
 
@@ -182,10 +184,10 @@ export const ApprovalView: React.FC = () => {
     if (!returnTarget) return;
     if (returnTarget.type === 'unit') {
       const res = returnUnitSubmission(returnTarget.id, selectedPeriodId, reason);
-      alert(res.message);
+      setToast({ type: res.success ? 'success' : 'error', message: res.message });
     } else {
       const res = returnHouseholdScore(returnTarget.id, selectedPeriodId, reason);
-      alert(res.message);
+      setToast({ type: res.success ? 'success' : 'error', message: res.message });
     }
     setReturnTarget(null);
   };
@@ -198,11 +200,12 @@ export const ApprovalView: React.FC = () => {
     isFinalized?: boolean;
   }) => {
     const res = updatePeriodDecisionFile(selectedPeriodId, data);
-    alert(res.message);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
   };
 
   const handleBatchConfirm = (data: {
-    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation';
+    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation' | 'ratio_90' | 'ratio_95';
+    targetIds?: string[];
     violationDetails?: string;
     evidenceFiles?: EvidenceFile[];
   }) => {
@@ -216,7 +219,7 @@ export const ApprovalView: React.FC = () => {
       violationDetails: data.violationDetails,
       evidenceFiles: data.evidenceFiles,
     });
-    alert(res.message);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
     setSelectedHhIds([]);
   };
 
@@ -237,7 +240,7 @@ export const ApprovalView: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900">
-                  Duyệt & Thẩm Định Dữ Liệu Cấp Xã / Phường
+                  Duyệt & Thẩm Định Dữ Liệu {terms.communeApproval}
                 </h2>
                 {selectedCommune && (
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
@@ -248,7 +251,7 @@ export const ApprovalView: React.FC = () => {
               <p className="text-xs text-slate-500 mt-0.5">
                 Đợt xét: <strong>{selectedPeriod?.name}</strong> • Tiến độ chốt:{' '}
                 <strong className="text-emerald-700">
-                  {totalLockedUnits}/{units.length} thôn/tổ
+                  {totalLockedUnits}/{units.length} {terms.unitLabelLower}
                 </strong>
               </p>
             </div>
@@ -500,13 +503,13 @@ export const ApprovalView: React.FC = () => {
                 <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold uppercase tracking-wider text-rose-900">
-                    Nội dung yêu cầu Thôn/Tổ chấm lại:
+                    Nội dung yêu cầu {terms.unitLabel} chấm lại:
                   </span>
                   <p className="text-rose-800 italic mt-0.5">
                     "{activeUnitProg.returnReason || 'Cần kiểm tra lại hồ sơ và báo cáo.'}"
                   </p>
                   <p className="text-[11px] text-rose-600 mt-1">
-                    Trả bởi: {activeUnitProg.returnedBy || 'Cán bộ Xã'} lúc {activeUnitProg.returnedAt}
+                    Trả bởi: {activeUnitProg.returnedBy || terms.communeOfficer} lúc {activeUnitProg.returnedAt}
                   </p>
                 </div>
               </div>
@@ -533,7 +536,7 @@ export const ApprovalView: React.FC = () => {
                 </strong>
               </div>
               <div>
-                <span className="text-slate-400 block">Điểm Thôn/Tổ:</span>
+                <span className="text-slate-400 block">Điểm {terms.unitLabel}:</span>
                 <strong className="text-slate-900 text-sm">
                   {unitScore
                     ? `${unitScore.finalScore}đ (${unitScore.isQualified ? 'Đạt' : 'Chưa đạt'})`
@@ -550,8 +553,8 @@ export const ApprovalView: React.FC = () => {
                   {isLocked
                     ? 'Dữ liệu đã duyệt chốt, hồ sơ đã được niêm phong chính thức.'
                     : activeUnitProg?.status === 'da_gui'
-                    ? 'Bạn có thể chấm lại, trả hồ sơ cho tổ chấm lại, hoặc Duyệt chốt để hoàn thành.'
-                    : 'Cán bộ xã có thể chấm nhanh đạt hoặc chấm chi tiết thay tổ, sau đó Duyệt chốt.'}
+                    ? `Bạn có thể chấm lại, trả hồ sơ cho ${terms.unitLeaderLower} chấm lại, hoặc Duyệt chốt để hoàn thành.`
+                    : `${terms.communeOfficer} có thể chấm nhanh đạt hoặc chấm chi tiết thay ${terms.unitLeaderLower}, sau đó Duyệt chốt.`}
                 </p>
               </div>
 
@@ -576,10 +579,10 @@ export const ApprovalView: React.FC = () => {
                         })
                       }
                       className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                      title="Trả toàn bộ hồ sơ để Thôn/Tổ rà soát và chấm lại"
+                      title={`Trả toàn bộ hồ sơ để ${terms.unitLabel} rà soát và chấm lại`}
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                      Trả hồ sơ để Tổ chấm lại
+                      Trả hồ sơ để {terms.unitLeader} chấm lại
                     </button>
 
                     <button
@@ -746,8 +749,13 @@ export const ApprovalView: React.FC = () => {
                                 </div>
 
                                 {sc.returnStatus === 'returned_for_revision' && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white">
-                                    Đã yêu cầu chấm lại
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse" title={sc.returnReason}>
+                                    Đã trả về Tổ chấm lại
+                                  </span>
+                                )}
+                                {sc.returnStatus === 'revised' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                    Tổ đã chấm lại xong
                                   </span>
                                 )}
                               </div>
@@ -954,6 +962,27 @@ export const ApprovalView: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm flex items-center gap-2.5 px-4 py-3 bg-slate-900/95 text-white rounded-xl shadow-2xl border border-slate-700 text-xs font-medium backdrop-blur-sm animate-in slide-in-from-bottom-5">
+          <div
+            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+              toast.type === 'success'
+                ? 'bg-emerald-400'
+                : toast.type === 'error'
+                ? 'bg-rose-500'
+                : 'bg-amber-400'
+            }`}
+          />
+          <span className="flex-1">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="text-slate-400 hover:text-white p-0.5"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

@@ -19,7 +19,8 @@ interface BatchScoreModalProps {
   unitName: string;
   periodName: string;
   onConfirmBatch: (data: {
-    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation';
+    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation' | 'ratio_90' | 'ratio_95';
+    targetIds?: string[];
     violationDetails?: string;
     evidenceFiles?: EvidenceFile[];
   }) => void;
@@ -34,7 +35,7 @@ export const BatchScoreModal: React.FC<BatchScoreModalProps> = ({
   onConfirmBatch,
 }) => {
   const [mode, setMode] = useState<
-    'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation'
+    'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation' | 'ratio_90' | 'ratio_95'
   >('pass_90');
   const [violationDetails, setViolationDetails] = useState('');
   const [evidenceFiles, setEvidenceFiles] = useState<EvidenceFile[]>([]);
@@ -45,6 +46,7 @@ export const BatchScoreModal: React.FC<BatchScoreModalProps> = ({
     e.preventDefault();
     onConfirmBatch({
       mode,
+      targetIds: selectedHouseholds.map((h) => h.id),
       violationDetails: mode === 'violation' ? violationDetails : undefined,
       evidenceFiles: mode === 'violation' ? evidenceFiles : undefined,
     });
@@ -131,7 +133,49 @@ export const BatchScoreModal: React.FC<BatchScoreModalProps> = ({
                 <div>
                   <div className="text-xs font-bold text-slate-900">Đạt loại Tốt (95đ)</div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    Các tiêu chuẩn đạt điểm cao, gương mẫu chấp hành.
+                    Các tiêu chuẩn đạt điểm cao, chấm trọn vẹn 95 điểm.
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => setMode('ratio_90')}
+                className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-2.5 ${
+                  mode === 'ratio_90'
+                    ? 'border-teal-500 bg-teal-50/80 ring-2 ring-teal-400/20'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <Sparkles
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    mode === 'ratio_90' ? 'text-teal-600' : 'text-slate-400'
+                  }`}
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-900">Đạt tỷ lệ 90% số hộ</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Phân bổ 90% số hộ đạt chuẩn (≥ 92đ), 10% hộ chưa đạt (chuẩn NTM).
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => setMode('ratio_95')}
+                className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-2.5 ${
+                  mode === 'ratio_95'
+                    ? 'border-indigo-500 bg-indigo-50/80 ring-2 ring-indigo-400/20'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <Award
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    mode === 'ratio_95' ? 'text-indigo-600' : 'text-slate-400'
+                  }`}
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-900">Đạt tỷ lệ 95% số hộ</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Phân bổ 95% số hộ đạt chuẩn (≥ 95đ), 5% hộ chưa đạt (chuẩn Đô thị).
                   </div>
                 </div>
               </div>

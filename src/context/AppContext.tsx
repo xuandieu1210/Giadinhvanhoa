@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { getAdministrativeTerms, AdministrativeTerms } from '../utils/administrativeTerms';
 import {
   INITIAL_CLANS,
   INITIAL_COMMUNES,
@@ -69,6 +70,7 @@ interface AppContextType {
   communes: Commune[];
   selectedCommuneId: string;
   selectedCommune: Commune | undefined;
+  terms: AdministrativeTerms;
   setSelectedCommuneId: (id: string) => void;
   addCommune: (commune: Omit<Commune, 'id'>) => void;
   updateCommune: (id: string, commune: Partial<Commune>) => void;
@@ -181,7 +183,7 @@ interface AppContextType {
     periodId: string;
     unitId: string;
     unitName: string;
-    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation';
+    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation' | 'ratio_90' | 'ratio_95';
     violationDetails?: string;
     evidenceFiles?: EvidenceFile[];
   }) => { success: boolean; message: string; count: number };
@@ -212,6 +214,7 @@ interface AppContextType {
   getUnitProgress: (unitId: string, periodId?: string) => UnitPeriodProgress;
   isPeriodExpired: (period?: EvaluationPeriod) => boolean;
   canEditUnitScores: (unitId: string, periodId?: string) => { allowed: boolean; reason?: string };
+  canEditHouseholdScore: (householdId: string, unitId: string, periodId?: string) => { allowed: boolean; reason?: string; isReturned?: boolean };
   recallUnitSubmission: (unitId: string, periodId: string) => { success: boolean; message: string };
   resetAllData: () => void;
 }
@@ -241,48 +244,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Communes (Xã / Phường)
   const [communes, setCommunes] = useState<Commune[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.COMMUNES);
-    return saved ? JSON.parse(saved) : INITIAL_COMMUNES;
+    const parsed = saved ? JSON.parse(saved) : null;
+    return parsed && parsed.length > 0 ? parsed : INITIAL_COMMUNES;
   });
 
-  const [selectedCommuneId, setSelectedCommuneIdState] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SELECTED_COMMUNE);
-    return saved || 'commune-1';
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    if (saved) {
+      const u = JSON.parse(saved);
+      if (u.communeId) {
+        localStorage.setItem(STORAGE_KEYS.SELECTED_COMMUNE, u.communeId);
+      }
+      return u;
+    }
+    return INITIAL_USERS[0];
   });
 
   // Users
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    const parsed = saved ? JSON.parse(saved) : null;
+    return parsed && parsed.length > 0 ? parsed : INITIAL_USERS;
   });
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (saved) return JSON.parse(saved);
-    return INITIAL_USERS[0];
+  const [selectedCommuneId, setSelectedCommuneIdState] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SELECTED_COMMUNE);
+    if (saved) return saved;
+    const userSaved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    if (userSaved) {
+      const u = JSON.parse(userSaved);
+      if (u.communeId) return u.communeId;
+    }
+    return 'commune-1';
   });
 
   // All Units
   const [allUnits, setAllUnits] = useState<Unit[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.UNITS);
-    return saved ? JSON.parse(saved) : INITIAL_UNITS;
+    const parsed = saved ? JSON.parse(saved) : null;
+    return parsed && parsed.length > 0 ? parsed : INITIAL_UNITS;
   });
 
   // All Clans
   const [allClans, setAllClans] = useState<Clan[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CLANS);
-    return saved ? JSON.parse(saved) : INITIAL_CLANS;
+    const parsed = saved ? JSON.parse(saved) : null;
+    return parsed && parsed.length > 0 ? parsed : INITIAL_CLANS;
   });
 
   // All Households
   const [allHouseholds, setAllHouseholds] = useState<Household[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.HOUSEHOLDS);
-    return saved ? JSON.parse(saved) : INITIAL_HOUSEHOLDS;
+    const parsed = saved ? JSON.parse(saved) : null;
+    return parsed && parsed.length > 0 ? parsed : INITIAL_HOUSEHOLDS;
   });
 
   // All Periods (Xã/phường tự tạo)
   const [allPeriods, setAllPeriods] = useState<EvaluationPeriod[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.PERIODS);
-    return saved ? JSON.parse(saved) : INITIAL_PERIODS;
+    const parsed = saved ? JSON.parse(saved) : null;
+    return parsed && parsed.length > 0 ? parsed : INITIAL_PERIODS;
   });
 
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => {
@@ -377,16 +398,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.HOUSEHOLD_TYPES, JSON.stringify(householdTypes));
   }, [householdTypes]);
 
+  useEffect(() => {
+    if (currentUser && currentUser.communeId && currentUser.communeId !== selectedCommuneId) {
+      if (currentUser.role === 'to_truong' || currentUser.role === 'can_bo_xa') {
+        setSelectedCommuneId(currentUser.communeId);
+      }
+    }
+  }, [currentUser]);
+
   // Active Commune
   const selectedCommune = communes.find((c) => c.id === selectedCommuneId) || communes[0];
+  const terms = useMemo(() => getAdministrativeTerms(selectedCommune), [selectedCommune]);
 
   // Scoped Data by Selected Commune
   const units = allUnits.filter((u) => u.communeId === selectedCommuneId);
   const clans = allClans.filter((c) => c.communeId === selectedCommuneId);
   const households = allHouseholds.filter(
-    (h) => h.communeId === selectedCommuneId || (!h.communeId && units.some((u) => u.id === h.unitId))
+    (h) => units.some((u) => u.id === h.unitId) || h.communeId === selectedCommuneId
   );
   const periods = allPeriods.filter((p) => p.communeId === selectedCommuneId);
+
+  // Keep selectedPeriodId synchronized with valid periods
+  useEffect(() => {
+    if (periods.length > 0 && (!selectedPeriodId || !periods.some((p) => p.id === selectedPeriodId))) {
+      const active = periods.find((p) => p.status === 'active') || periods[0];
+      setSelectedPeriodId(active.id);
+    }
+  }, [periods, selectedPeriodId]);
 
   // When switching commune, ensure selected period matches one of this commune's periods
   const setSelectedCommuneId = (communeId: string) => {
@@ -471,6 +509,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     return { allowed: true };
+  };
+
+  // Permission: Can the user edit/re-score a specific household?
+  const canEditHouseholdScore = (householdId: string, unitId: string, periodId?: string): { allowed: boolean; reason?: string; isReturned?: boolean } => {
+    const pid = periodId || selectedPeriodId;
+    const prog = getUnitProgress(unitId, pid);
+    if (prog.status === 'da_chot') {
+      return { allowed: false, reason: 'Hồ sơ đơn vị này đã được UBND Xã DUYỆT CHỐT chính thức. Không thể sửa đổi.' };
+    }
+    const sc = scores.find((s) => s.periodId === pid && s.targetType === 'household' && s.targetId === householdId);
+    if (sc?.returnStatus === 'returned_for_revision') {
+      return { allowed: true, isReturned: true };
+    }
+    return canEditUnitScores(unitId, pid);
   };
 
   // Auth handlers
@@ -725,8 +777,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Scoring
   const saveScore = (scoreData: SaveScoreInput): { success: boolean; message: string } => {
+    const existingIndex = scores.findIndex(
+      (s) =>
+        s.periodId === scoreData.periodId &&
+        s.targetType === scoreData.targetType &&
+        s.targetId === scoreData.targetId
+    );
+
+    const existing = existingIndex >= 0 ? scores[existingIndex] : undefined;
+    const isReturnedHousehold = existing?.returnStatus === 'returned_for_revision';
+
+    const prog = getUnitProgress(scoreData.unitId, scoreData.periodId);
+    if (prog.status === 'da_chot') {
+      return { success: false, message: 'Hồ sơ đơn vị này đã được UBND Xã DUYỆT CHỐT chính thức. Không thể sửa đổi.' };
+    }
+
     const check = canEditUnitScores(scoreData.unitId, scoreData.periodId);
-    if (!check.allowed) {
+    if (!check.allowed && !isReturnedHousehold) {
       return { success: false, message: check.reason || 'Không được phép chỉnh sửa điểm.' };
     }
 
@@ -744,15 +811,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const evalLevel = currentUser?.role === 'to_truong' ? 'to' : 'xa';
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
-    const existingIndex = scores.findIndex(
-      (s) =>
-        s.periodId === scoreData.periodId &&
-        s.targetType === scoreData.targetType &&
-        s.targetId === scoreData.targetId
-    );
-
-    const existing = existingIndex >= 0 ? scores[existingIndex] : undefined;
-
+    const wasReturned = isReturnedHousehold;
     const completeScore: EvaluationScoreItem = {
       id: scoreData.id || existing?.id || `sc-${Date.now()}`,
       periodId: scoreData.periodId,
@@ -771,7 +830,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hasViolation: scoreData.hasViolation ?? existing?.hasViolation ?? (penalty > 0 || !isQualified),
       violationDetails: scoreData.violationDetails ?? existing?.violationDetails,
       evidenceFiles: scoreData.evidenceFiles ?? existing?.evidenceFiles ?? [],
-      returnStatus: scoreData.returnStatus ?? existing?.returnStatus ?? 'none',
+      returnStatus: scoreData.returnStatus !== undefined
+        ? scoreData.returnStatus
+        : wasReturned
+          ? 'revised'
+          : (existing?.returnStatus ?? 'none'),
+      revisedAt: wasReturned ? nowStr : existing?.revisedAt,
       returnReason: scoreData.returnReason ?? existing?.returnReason,
       evaluatedByLevel: evalLevel,
       comments: scoreData.comments,
@@ -787,7 +851,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [...prev, completeScore];
     });
 
-    return { success: true, message: 'Đã lưu điểm đánh giá thành công!' };
+    return {
+      success: true,
+      message: wasReturned
+        ? `Đã hoàn tất chấm lại điểm cho ${scoreData.targetName} thành công!`
+        : 'Đã lưu điểm đánh giá thành công!',
+    };
   };
 
   // Submit Unit Data to Commune
@@ -1030,6 +1099,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Chỉ Cán bộ Xã hoặc Quản trị viên mới có quyền trả hồ sơ hộ gia đình!' };
     }
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+    const targetHh = allHouseholds.find((h) => h.id === householdId);
+    const targetUnitId = targetHh?.unitId;
+
+    if (targetUnitId) {
+      const prog = getUnitProgress(targetUnitId, periodId);
+      if (prog.status !== 'da_chot') {
+        const updatedProgress: UnitPeriodProgress = {
+          ...prog,
+          unitId: targetUnitId,
+          periodId,
+          status: 'tra_lai',
+          returnedAt: nowStr,
+          returnedBy: currentUser?.fullName || 'Cán bộ Xã',
+          returnReason: `UBND Xã trả lại hồ sơ hộ ${targetHh?.headName || ''} để Tổ chấm lại: ${returnReason.trim() || 'Rà soát và chấm lại điểm.'}`,
+        };
+        setProgressList((prev) => {
+          const idx = prev.findIndex((p) => p.unitId === targetUnitId && p.periodId === periodId);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updatedProgress;
+            return next;
+          }
+          return [...prev, updatedProgress];
+        });
+      }
+    }
+
     setScores((prev) =>
       prev.map((s) => {
         if (s.periodId === periodId && s.targetType === 'household' && s.targetId === householdId) {
@@ -1043,7 +1139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return s;
       })
     );
-    return { success: true, message: 'Đã đánh dấu yêu cầu Tổ chấm lại hộ này thành công!' };
+    return { success: true, message: `Đã chuyển trả hồ sơ hộ ${targetHh ? targetHh.headName : ''} về Thôn/Tổ để chấm lại thành công!` };
   };
 
   // Chấm nhanh nhiều hộ 1 lúc (Batch scoring)
@@ -1052,11 +1148,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     periodId: string;
     unitId: string;
     unitName: string;
-    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation';
+    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation' | 'ratio_90' | 'ratio_95';
     violationDetails?: string;
     evidenceFiles?: EvidenceFile[];
   }): { success: boolean; message: string; count: number } => {
-    const check = canEditUnitScores(inputs.unitId, inputs.periodId);
+    const effectiveUnitId = (currentUser?.role === 'to_truong' && currentUser.unitId) ? currentUser.unitId : inputs.unitId;
+    const check = canEditUnitScores(effectiveUnitId, inputs.periodId);
     if (!check.allowed) {
       return { success: false, message: check.reason || 'Không được phép chỉnh sửa điểm của đơn vị này.', count: 0 };
     }
@@ -1067,9 +1164,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setScores((prev) => {
       const updated = [...prev];
 
-      inputs.householdIds.forEach((hhId) => {
+      inputs.householdIds.forEach((hhId, idx) => {
         const hhObj = allHouseholds.find((h) => h.id === hhId);
         const hhName = hhObj ? `Hộ ${hhObj.headName}` : 'Hộ gia đình';
+        const hhUnitId = hhObj?.unitId || effectiveUnitId;
+        const hhUnitName = hhObj?.unitName || inputs.unitName;
+
         const existingIdx = updated.findIndex(
           (s) => s.periodId === inputs.periodId && s.targetType === 'household' && s.targetId === hhId
         );
@@ -1090,8 +1190,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               targetType: 'household',
               targetId: hhId,
               targetName: hhName,
-              unitId: inputs.unitId,
-              unitName: inputs.unitName,
+              unitId: hhUnitId,
+              unitName: hhUnitName,
               criteriaScores: { standard1: 29, standard2: 29, standard3: 29, standard4: 9 },
               bonusPoints: 1,
               penaltyPoints: 0,
@@ -1117,8 +1217,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             targetType: 'household',
             targetId: hhId,
             targetName: hhName,
-            unitId: inputs.unitId,
-            unitName: inputs.unitName,
+            unitId: hhUnitId,
+            unitName: hhUnitName,
             criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
             bonusPoints: 0,
             penaltyPoints: penalty,
@@ -1137,11 +1237,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
             updated.push(scoreObj);
           }
+        } else if (inputs.mode === 'ratio_90' || inputs.mode === 'ratio_95') {
+          const ratio = inputs.mode === 'ratio_95' ? 0.95 : 0.90;
+          const passCount = Math.max(1, Math.ceil(inputs.householdIds.length * ratio));
+          const isPass = idx < passCount;
+
+          let s1 = isPass ? 28 : 25;
+          let s2 = isPass ? 28 : 24;
+          let s3 = isPass ? 28 : 24;
+          let s4 = isPass ? 9 : 7;
+          let bonus = isPass ? 1 : 0;
+          let penalty = isPass ? 0 : 5;
+          if (inputs.mode === 'ratio_95' && isPass) {
+            s1 = 29; s2 = 29; s3 = 28; s4 = 9; bonus = 0;
+          }
+          const total = s1 + s2 + s3 + s4;
+          const finalScore = total + bonus - penalty;
+
+          const scoreObj: EvaluationScoreItem = {
+            id: existing?.id || `sc-hh-${hhId}-${inputs.periodId}`,
+            periodId: inputs.periodId,
+            targetType: 'household',
+            targetId: hhId,
+            targetName: hhName,
+            unitId: hhUnitId,
+            unitName: hhUnitName,
+            criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
+            bonusPoints: bonus,
+            penaltyPoints: penalty,
+            totalStandardScore: total,
+            finalScore,
+            isQualified: finalScore >= 90,
+            isExemplary: existing?.isExemplary || (isPass && idx === 0),
+            hasViolation: !isPass,
+            violationDetails: isPass ? undefined : 'Chưa đạt đủ tiêu chuẩn nếp sống văn hóa cơ sở',
+            evidenceFiles: existing?.evidenceFiles || [],
+            evaluatedByLevel: evalLevel,
+            updatedAt: nowStr,
+          };
+          if (existingIdx >= 0) {
+            updated[existingIdx] = scoreObj;
+          } else {
+            updated.push(scoreObj);
+          }
         } else {
-          let s1 = 28;
-          let s2 = 28;
+          // pass_90 | pass_95 | pass_100
+          let s1 = 27;
+          let s2 = 27;
           let s3 = 27;
-          let s4 = 8;
+          let s4 = 9;
           let bonus = 0;
           if (inputs.mode === 'pass_95') {
             s1 = 29; s2 = 29; s3 = 28; s4 = 9; bonus = 0;
@@ -1157,8 +1301,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             targetType: 'household',
             targetId: hhId,
             targetName: hhName,
-            unitId: inputs.unitId,
-            unitName: inputs.unitName,
+            unitId: hhUnitId,
+            unitName: hhUnitName,
             criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
             bonusPoints: bonus,
             penaltyPoints: 0,
@@ -1169,6 +1313,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             hasViolation: false,
             violationDetails: undefined,
             evidenceFiles: existing?.evidenceFiles || [],
+            returnStatus: existing?.returnStatus === 'returned_for_revision' ? 'revised' : (existing?.returnStatus || 'none'),
+            revisedAt: existing?.returnStatus === 'returned_for_revision' ? nowStr : existing?.revisedAt,
             evaluatedByLevel: evalLevel,
             updatedAt: nowStr,
           };
@@ -1183,9 +1329,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
+    let msg = `Đã áp dụng chấm nhanh cho ${inputs.householdIds.length} hộ gia đình!`;
+    if (inputs.mode === 'pass_90') msg = `Đã chấm đạt chuẩn 90 điểm thành công cho ${inputs.householdIds.length} hộ!`;
+    else if (inputs.mode === 'pass_95') msg = `Đã chấm đạt loại Tốt 95 điểm thành công cho ${inputs.householdIds.length} hộ!`;
+    else if (inputs.mode === 'ratio_90') msg = `Đã phân bổ đạt tỷ lệ 90% cho ${inputs.householdIds.length} hộ thành công!`;
+    else if (inputs.mode === 'ratio_95') msg = `Đã phân bổ đạt tỷ lệ 95% cho ${inputs.householdIds.length} hộ thành công!`;
+    else if (inputs.mode === 'set_exemplary') msg = `Đã chọn ${inputs.householdIds.length} hộ gia đình Văn hóa Tiêu biểu!`;
+
     return {
       success: true,
-      message: `Đã áp dụng chấm nhanh cho ${inputs.householdIds.length} hộ gia đình!`,
+      message: msg,
       count: inputs.householdIds.length,
     };
   };
@@ -1392,6 +1545,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         communes,
         selectedCommuneId,
         selectedCommune,
+        terms,
         setSelectedCommuneId,
         addCommune,
         updateCommune,
@@ -1473,6 +1627,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getUnitProgress,
         isPeriodExpired,
         canEditUnitScores,
+        canEditHouseholdScore,
         resetAllData,
       }}
     >

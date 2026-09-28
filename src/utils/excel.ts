@@ -54,8 +54,11 @@ export const exportHouseholdsToExcel = (households: Household[], filename = 'Dan
     'Giới tính': h.gender,
     'Năm sinh': h.birthYear || '',
     'Số nhân khẩu': h.memberCount,
+    'Gia đình Đảng viên': h.isPartyMemberFamily ? 'Có' : 'Không',
+    'Số Đảng viên': h.isPartyMemberFamily ? (h.partyMemberCount || 1) : 0,
     'Địa chỉ': h.address,
     'Thôn/Tổ': h.unitName,
+    'Cụm dân cư': h.residentialCluster || 'Cụm 1',
     'Tộc họ': h.clanName || 'Không thuộc tộc họ',
     'Số điện thoại': h.phone || '',
     'Ghi chú': h.notes || '',
@@ -250,6 +253,83 @@ export const exportSubmissionStatusToExcel = (
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Tien_do_gui');
   XLSX.writeFile(wb, finalFilename);
+};
+
+export const exportWardSummaryExcel = (
+  period: EvaluationPeriod,
+  units: Unit[],
+  households: Household[],
+  scores: EvaluationScoreItem[],
+  filename = `Bao_cao_tong_hop_GĐVH_${period.year}.xlsx`
+) => {
+  const periodScores = scores.filter(s => s.periodId === period.id);
+  
+  const data = units.map((u, idx) => {
+    const uHhs = households.filter(h => h.unitId === u.id);
+    const totalHh = uHhs.length;
+    const qualifiedHhs = uHhs.filter(h => {
+      const sc = periodScores.find(s => s.targetType === 'household' && s.targetId === h.id);
+      return sc?.isQualified;
+    });
+    const qualCount = qualifiedHhs.length;
+    const qualRate = totalHh > 0 ? Number(((qualCount / totalHh) * 100).toFixed(2)) : 0;
+    
+    const unqualCount = totalHh - qualCount;
+    const unqualRate = totalHh > 0 ? Number(((unqualCount / totalHh) * 100).toFixed(2)) : 0;
+
+    const partyUnqualCount = uHhs.filter(h => {
+      const sc = periodScores.find(s => s.targetType === 'household' && s.targetId === h.id);
+      const isParty = h.isPartyMemberFamily || (h.partyMemberCount && h.partyMemberCount > 0);
+      const isNotQual = !sc || !sc.isQualified;
+      return isParty && isNotQual;
+    }).length;
+
+    return {
+      'TT': idx + 1,
+      'Tổ dân phố / Thôn': u.name,
+      'Tổng số hộ': totalHh,
+      'Hộ đạt GĐVH (Số hộ)': qualCount,
+      'Hộ đạt GĐVH (Tỷ lệ %)': `${qualRate}%`,
+      'Hộ không đạt GĐVH (Số hộ)': unqualCount,
+      'Hộ không đạt GĐVH (Tỷ lệ %)': `${unqualRate}%`,
+      'Hộ Đảng viên, CNVC không đạt GĐVH': partyUnqualCount,
+    };
+  });
+
+  const sumTotalHhs = units.reduce((acc, u) => acc + households.filter(h => h.unitId === u.id).length, 0);
+  const sumQualified = units.reduce((acc, u) => {
+    const uHhs = households.filter(h => h.unitId === u.id);
+    return acc + uHhs.filter(h => {
+      const sc = periodScores.find(s => s.targetType === 'household' && s.targetId === h.id);
+      return sc?.isQualified;
+    }).length;
+  }, 0);
+  const sumUnqualified = sumTotalHhs - sumQualified;
+  const sumPartyUnqualified = units.reduce((acc, u) => {
+    const uHhs = households.filter(h => h.unitId === u.id);
+    return acc + uHhs.filter(h => {
+      const sc = periodScores.find(s => s.targetType === 'household' && s.targetId === h.id);
+      const isParty = h.isPartyMemberFamily || (h.partyMemberCount && h.partyMemberCount > 0);
+      const isNotQual = !sc || !sc.isQualified;
+      return isParty && isNotQual;
+    }).length;
+  }, 0);
+
+  data.push({
+    'TT': '' as any,
+    'Tổ dân phố / Thôn': 'TỔNG CỘNG TOÀN XÃ / PHƯỜNG',
+    'Tổng số hộ': sumTotalHhs,
+    'Hộ đạt GĐVH (Số hộ)': sumQualified,
+    'Hộ đạt GĐVH (Tỷ lệ %)': sumTotalHhs > 0 ? `${((sumQualified / sumTotalHhs) * 100).toFixed(2)}%` : '0%',
+    'Hộ không đạt GĐVH (Số hộ)': sumUnqualified,
+    'Hộ không đạt GĐVH (Tỷ lệ %)': sumTotalHhs > 0 ? `${((sumUnqualified / sumTotalHhs) * 100).toFixed(2)}%` : '0%',
+    'Hộ Đảng viên, CNVC không đạt GĐVH': sumPartyUnqualified,
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Tong_hop_toan_phuong');
+  XLSX.writeFile(workbook, filename);
 };
 
 // Parser helpers for uploaded Excel files

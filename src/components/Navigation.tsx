@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Award,
   BarChart3,
+  Building2,
   CalendarDays,
   CheckSquare,
   ChevronRight,
@@ -31,6 +32,7 @@ export type TabKey =
   | 'approval'
   | 'reports'
   | 'users'
+  | 'communes'
   | 'guide';
 
 interface NavItem {
@@ -66,6 +68,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   const {
     currentUser,
     selectedCommune,
+    terms,
     units,
     clans,
     progressList,
@@ -90,9 +93,9 @@ export const Navigation: React.FC<NavigationProps> = ({
       case 'admin':
         return { label: 'Quản trị viên', bg: 'bg-purple-100 text-purple-800 border-purple-200' };
       case 'can_bo_xa':
-        return { label: 'Cán bộ Xã', bg: 'bg-blue-100 text-blue-800 border-blue-200' };
+        return { label: terms.communeOfficer, bg: 'bg-blue-100 text-blue-800 border-blue-200' };
       case 'to_truong':
-        return { label: 'Tổ trưởng', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+        return { label: terms.unitLeader, bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
       default:
         return { label: 'Khách', bg: 'bg-slate-100 text-slate-800 border-slate-200' };
     }
@@ -107,19 +110,19 @@ export const Navigation: React.FC<NavigationProps> = ({
       items: [
         {
           key: 'scoring' as TabKey,
-          label: 'Chấm điểm theo đợt',
+          label: `Tự chấm điểm ${terms.unitLabelShort}`,
           icon: CheckSquare,
           badge: null,
           badgeColor: '',
-          description: 'Thôn/Tổ tự chấm hộ & tổ mình',
+          description: `${terms.unitLabel} tự chấm hộ & ${terms.unitLabelLower} mình`,
         },
         {
           key: 'approval' as TabKey,
-          label: 'Duyệt dữ liệu của tổ',
+          label: `Duyệt dữ liệu (${terms.communeLevel})`,
           icon: FileCheck2,
           badge: pendingApprovalCount > 0 ? `${pendingApprovalCount} chờ` : null,
           badgeColor: 'bg-amber-500 text-white',
-          description: 'Hội đồng xã thẩm tra & chốt',
+          description: `${terms.communeCouncil} thẩm định & chốt`,
           hidden: isToTruong,
         },
         {
@@ -149,15 +152,15 @@ export const Navigation: React.FC<NavigationProps> = ({
           icon: CalendarDays,
           badge: null,
           badgeColor: '',
-          description: 'Xã/phường tự tạo & quản lý',
+          description: `${terms.communeLevel} tự tạo & quản lý`,
         },
         {
           key: 'units' as TabKey,
-          label: 'Thôn / Tổ dân phố',
+          label: `Danh sách ${terms.unitLabel}`,
           icon: Home,
           badge: `${units.length}`,
           badgeColor: 'bg-slate-100 text-slate-600',
-          description: 'Đơn vị tự chấm điểm cơ sở',
+          description: `Đơn vị ${terms.unitLabelLower} tự chấm cơ sở`,
         },
         {
           key: 'clans' as TabKey,
@@ -165,7 +168,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           icon: Users2,
           badge: `${clans.length}`,
           badgeColor: 'bg-amber-100 text-amber-800',
-          description: 'Xã công nhận (không chấm điểm)',
+          description: `${terms.communeLevel} công nhận (không chấm điểm)`,
         },
         {
           key: 'households' as TabKey,
@@ -180,6 +183,15 @@ export const Navigation: React.FC<NavigationProps> = ({
     {
       title: 'HỆ THỐNG & HỖ TRỢ',
       items: [
+        {
+          key: 'communes' as TabKey,
+          label: 'Quản lý Xã / Phường',
+          icon: Building2,
+          badge: 'Admin',
+          badgeColor: 'bg-amber-100 text-amber-800 border border-amber-200',
+          description: 'Danh sách và thông tin đơn vị xã, phường',
+          hidden: !isAdmin,
+        },
         {
           key: 'users' as TabKey,
           label: 'Quản lý người dùng',

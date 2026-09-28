@@ -36,9 +36,13 @@ export const HouseholdsView: React.FC = () => {
     address: '',
     unitId: units[0]?.id || '',
     residentialCluster: 'Cụm 1',
+    isPartyMemberFamily: false,
+    partyMemberCount: 1,
     phone: '',
     notes: '',
   });
+
+  const [selectedPartyFilter, setSelectedPartyFilter] = useState<'all' | 'party' | 'non_party'>('all');
 
   // Distinct residential clusters for filter
   const distinctClusters = Array.from(
@@ -55,9 +59,15 @@ export const HouseholdsView: React.FC = () => {
     const matchesCluster =
       selectedClusterFilter === 'all' ||
       (h.residentialCluster || 'Chưa phân cụm') === selectedClusterFilter;
+    const matchesParty =
+      selectedPartyFilter === 'all' ||
+      (selectedPartyFilter === 'party' && h.isPartyMemberFamily) ||
+      (selectedPartyFilter === 'non_party' && !h.isPartyMemberFamily);
 
-    return matchesSearch && matchesUnit && matchesCluster;
+    return matchesSearch && matchesUnit && matchesCluster && matchesParty;
   });
+
+  const partyHouseholdCount = households.filter((h) => h.isPartyMemberFamily).length;
 
   const openCreateModal = () => {
     setEditingHousehold(null);
@@ -72,6 +82,8 @@ export const HouseholdsView: React.FC = () => {
       address: '',
       unitId: defaultUnitId,
       residentialCluster: 'Cụm 1',
+      isPartyMemberFamily: false,
+      partyMemberCount: 1,
       phone: '',
       notes: '',
     });
@@ -89,6 +101,8 @@ export const HouseholdsView: React.FC = () => {
       address: h.address,
       unitId: h.unitId,
       residentialCluster: h.residentialCluster || 'Cụm 1',
+      isPartyMemberFamily: h.isPartyMemberFamily || false,
+      partyMemberCount: h.partyMemberCount || 1,
       phone: h.phone || '',
       notes: h.notes || '',
     });
@@ -223,10 +237,26 @@ export const HouseholdsView: React.FC = () => {
               </option>
             ))}
           </select>
+
+          <select
+            value={selectedPartyFilter}
+            onChange={(e: any) => setSelectedPartyFilter(e.target.value)}
+            className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-hidden font-medium"
+          >
+            <option value="all">Tất cả thành phần</option>
+            <option value="party">★ Gia đình Đảng viên</option>
+            <option value="non_party">Hộ quần chúng</option>
+          </select>
         </div>
 
-        <div className="text-xs text-slate-600">
-          Hiển thị: <strong className="text-slate-900">{filteredHouseholds.length}</strong> / {households.length} hộ
+        <div className="text-xs text-slate-600 flex items-center gap-3">
+          <span>
+            Hiển thị: <strong className="text-slate-900">{filteredHouseholds.length}</strong> / {households.length} hộ
+          </span>
+          <span className="text-slate-300">|</span>
+          <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
+            ★ {partyHouseholdCount} hộ Đảng viên
+          </span>
         </div>
       </div>
 
@@ -265,7 +295,17 @@ export const HouseholdsView: React.FC = () => {
                       <td className="p-3 text-center font-medium text-slate-400">{idx + 1}</td>
                       <td className="p-3 font-mono font-bold text-slate-800">{hh.code}</td>
                       <td className="p-3">
-                        <div className="font-semibold text-slate-900">{hh.headName}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-slate-900">{hh.headName}</span>
+                          {hh.isPartyMemberFamily && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 shadow-2xs"
+                              title={`Gia đình Đảng viên (${hh.partyMemberCount || 1} Đảng viên)`}
+                            >
+                              ★ Đảng viên ({hh.partyMemberCount || 1})
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-slate-400">
                           {hh.gender}, sinh năm {hh.birthYear || '—'}
                         </div>
@@ -463,6 +503,64 @@ export const HouseholdsView: React.FC = () => {
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
+              </div>
+
+              {/* Party Member Family Field */}
+              <div className="p-3.5 bg-red-50/70 border border-red-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-red-600 text-white rounded-lg text-xs font-bold shadow-2xs">
+                      ★
+                    </span>
+                    <div>
+                      <label className="text-xs font-bold text-slate-900 block">
+                        Gia đình Đảng viên
+                      </label>
+                      <p className="text-[11px] text-slate-500">
+                        Đánh dấu nếu hộ gia đình có thành viên là Đảng viên Đảng Cộng sản Việt Nam
+                      </p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isPartyMemberFamily || false}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          isPartyMemberFamily: e.target.checked,
+                          partyMemberCount: e.target.checked ? (formData.partyMemberCount || 1) : 0,
+                        })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+                  </label>
+                </div>
+
+                {formData.isPartyMemberFamily && (
+                  <div className="pt-2 border-t border-red-200/70 flex items-center justify-between gap-3 animate-in fade-in duration-150">
+                    <label className="text-xs font-semibold text-red-900">
+                      Số lượng Đảng viên trong gia đình:
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={formData.partyMemberCount || 1}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            partyMemberCount: Math.max(1, Number(e.target.value)),
+                          })
+                        }
+                        className="w-24 px-3 py-1 text-xs border border-red-300 rounded-lg bg-white focus:ring-2 focus:ring-red-500 outline-hidden font-bold text-red-950 text-center"
+                      />
+                      <span className="text-xs text-red-700 font-medium">đồng chí</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

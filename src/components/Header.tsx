@@ -31,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
     selectedCommuneId,
     setSelectedCommuneId,
     selectedCommune,
+    terms,
     currentUser,
     switchUser,
     logout,
@@ -49,9 +50,9 @@ export const Header: React.FC<HeaderProps> = ({
       case 'admin':
         return { label: 'Quản trị viên', bg: 'bg-purple-100 text-purple-800 border-purple-300' };
       case 'can_bo_xa':
-        return { label: 'Cán bộ Xã/Phường', bg: 'bg-blue-100 text-blue-800 border-blue-300' };
+        return { label: terms.communeOfficer, bg: 'bg-blue-100 text-blue-800 border-blue-300' };
       case 'to_truong':
-        return { label: 'Tổ trưởng / Trưởng thôn', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+        return { label: terms.unitLeader, bg: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
       default:
         return { label: 'Khách', bg: 'bg-slate-100 text-slate-800 border-slate-300' };
     }
@@ -62,23 +63,25 @@ export const Header: React.FC<HeaderProps> = ({
   const getTabTitle = (tab: TabKey) => {
     switch (tab) {
       case 'scoring':
-        return { group: 'Nghiệp vụ', title: 'Chấm điểm theo đợt (Thôn/Tổ tự chấm)' };
+        return { group: 'Nghiệp vụ', title: `Chấm điểm theo đợt (${terms.unitLabel} tự chấm)` };
       case 'approval':
-        return { group: 'Nghiệp vụ', title: 'Thẩm định & Duyệt dữ liệu của tổ' };
+        return { group: 'Nghiệp vụ', title: `Thẩm định & Duyệt dữ liệu ${terms.unitLabelLower}` };
       case 'reports':
         return { group: 'Nghiệp vụ', title: 'Báo cáo & Thống kê' };
       case 'categories':
         return { group: 'Danh mục', title: 'Quản lý danh mục chuẩn (NĐ 86)' };
       case 'periods':
-        return { group: 'Danh mục', title: 'Đợt bình xét của Xã/Phường' };
+        return { group: 'Danh mục', title: `Đợt bình xét của ${terms.communeLevel}` };
       case 'units':
-        return { group: 'Dữ liệu', title: 'Danh mục Thôn / Tổ dân phố' };
+        return { group: 'Dữ liệu', title: `Danh mục ${terms.unitLabel}` };
       case 'clans':
-        return { group: 'Dữ liệu', title: 'Dòng họ văn hóa (Xã công nhận)' };
+        return { group: 'Dữ liệu', title: `Dòng họ văn hóa (${terms.communeLevel} công nhận)` };
       case 'households':
         return { group: 'Dữ liệu', title: 'Hồ sơ Hộ gia đình' };
       case 'users':
         return { group: 'Hệ thống', title: 'Quản trị Người dùng & Phân quyền' };
+      case 'communes':
+        return { group: 'Hệ thống', title: 'Quản lý danh sách Xã / Phường' };
       default:
         return { group: 'Hệ thống', title: 'Bình xét văn hóa' };
     }
@@ -284,37 +287,39 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => switchUser('xa')}
+            onClick={() => switchUser(terms.isWard ? 'phuong' : 'xa')}
             className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.username === 'xa'
+              currentUser?.username === 'xa' || currentUser?.username === 'phuong'
                 ? 'bg-blue-700 text-white border-blue-800 shadow-xs'
                 : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50'
             }`}
           >
-            Cán bộ xã
+            {terms.communeOfficer}
           </button>
           <button
             type="button"
-            onClick={() => switchUser('to1')}
+            onClick={() => switchUser(terms.isWard ? 'top1' : 'to1')}
             className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.username === 'to1'
+              currentUser?.username === 'to1' || currentUser?.username === 'top1'
                 ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
                 : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50'
             }`}
           >
-            Tổ trưởng 1
+            {terms.unitLeader} 1
           </button>
-          <button
-            type="button"
-            onClick={() => switchUser('to2')}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.username === 'to2'
-                ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50'
-            }`}
-          >
-            Tổ trưởng 2
-          </button>
+          {!terms.isWard && (
+            <button
+              type="button"
+              onClick={() => switchUser('to2')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
+                currentUser?.username === 'to2'
+                  ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
+                  : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50'
+              }`}
+            >
+              {terms.unitLeader} 2
+            </button>
+          )}
 
           <button
             type="button"

@@ -38,6 +38,7 @@ export const ScoringView: React.FC = () => {
     units,
     households,
     scores,
+    terms,
     saveScore,
     submitUnitDataToXa,
     recallUnitSubmission,
@@ -63,9 +64,18 @@ export const ScoringView: React.FC = () => {
   const [activeUnitId, setActiveUnitId] = useState<string>(initialUnitId);
   const [searchTerm, setSearchTerm] = useState('');
   const [clusterFilter, setClusterFilter] = useState<string>('all');
+  const [partyFilter, setPartyFilter] = useState<'all' | 'party' | 'non_party'>('all');
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'qualified' | 'unqualified' | 'exemplary' | 'violation' | 'revision'
   >('all');
+
+  React.useEffect(() => {
+    if (currentUser?.role === 'to_truong' && currentUser.unitId) {
+      setActiveUnitId(currentUser.unitId);
+    } else if (units.length > 0 && !units.some((u) => u.id === activeUnitId)) {
+      setActiveUnitId(units[0].id);
+    }
+  }, [currentUser, units]);
 
   // Multi-select for batch scoring
   const [selectedHhIds, setSelectedHhIds] = useState<string[]>([]);
@@ -87,22 +97,47 @@ export const ScoringView: React.FC = () => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [submitNotes, setSubmitNotes] = useState('');
 
+  // Safe confirmation dialogs
+  const [isQuickPassConfirmOpen, setIsQuickPassConfirmOpen] = useState(false);
+  const [isRecallConfirmOpen, setIsRecallConfirmOpen] = useState(false);
+
+  // Toast Notification
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const effectivePeriodId = selectedPeriod?.id || selectedPeriodId;
+
   const currentUnit = units.find((u) => u.id === activeUnitId) || units[0];
-  const unitProgress = currentUnit ? getUnitProgress(currentUnit.id, selectedPeriodId) : null;
+  const unitProgress = currentUnit ? getUnitProgress(currentUnit.id, effectivePeriodId) : null;
   const expired = isPeriodExpired(selectedPeriod);
 
   // Permission check for this unit
-  const editCheck = currentUnit ? canEditUnitScores(currentUnit.id, selectedPeriodId) : { allowed: false };
+  const editCheck = currentUnit ? canEditUnitScores(currentUnit.id, effectivePeriodId) : { allowed: false };
   const canEdit = editCheck.allowed;
 
   const handleOpenScoreModal = (
     type: 'household' | 'unit',
     targetId: string,
-    targetName: string
+    targetName: string,
+    forceEditable?: boolean
   ) => {
     const existing = scores.find(
-      (s) => s.periodId === selectedPeriodId && s.targetType === type && s.targetId === targetId
+      (s) => s.periodId === effectivePeriodId && s.targetType === type && s.targetId === targetId
     );
+
+    const isLocked = unitProgress?.status === 'da_chot';
+    const isReturnedHousehold = type === 'household' && existing?.returnStatus === 'returned_for_revision';
+
+    const isReadOnly = forceEditable
+      ? false
+      : isReturnedHousehold
+      ? isLocked
+      : !canEdit;
 
     setScoringTarget({
       targetType: type,
@@ -111,33 +146,33 @@ export const ScoringView: React.FC = () => {
       unitId: currentUnit.id,
       unitName: currentUnit.name,
       initialScore: existing,
-      readOnly: !canEdit,
+      readOnly: isReadOnly,
     });
     setIsScoreModalOpen(true);
   };
 
   const handleSaveScoreFromModal = (data: any) => {
     const res = saveScore(data);
-    alert(res.message);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
   };
 
   const handleConfirmSubmitToXa = () => {
     if (!currentUnit) return;
-    const res = submitUnitDataToXa(currentUnit.id, selectedPeriodId, submitNotes);
-    alert(res.message);
+    const res = submitUnitDataToXa(currentUnit.id, effectivePeriodId, submitNotes);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
     setIsSubmitModalOpen(false);
   };
 
   const handleQuickPass = () => {
     if (!currentUnit) return;
-    if (
-      window.confirm(
-        `Xác nhận "Tự chấm nhanh đạt chuẩn (>= 90 điểm)" cho Thôn/Tổ và toàn bộ Hộ gia đình thuộc "${currentUnit.name}"?`
-      )
-    ) {
-      const res = quickPassUnit(currentUnit.id, selectedPeriodId);
-      alert(res.message);
-    }
+    setIsQuickPassConfirmOpen(true);
+  };
+
+  const handleExecuteQuickPass = () => {
+    if (!currentUnit) return;
+    const res = quickPassUnit(currentUnit.id, effectivePeriodId);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
+    setIsQuickPassConfirmOpen(false);
   };
 
   const handleToggleSelectAll = (filteredHhs: typeof households) => {
@@ -155,50 +190,70 @@ export const ScoringView: React.FC = () => {
   };
 
   const handleBatchConfirm = (data: {
-    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation';
+    mode: 'pass_90' | 'pass_95' | 'pass_100' | 'set_exemplary' | 'clear_exemplary' | 'violation' | 'ratio_90' | 'ratio_95';
+    targetIds?: string[];
     violationDetails?: string;
     evidenceFiles?: EvidenceFile[];
   }) => {
-    if (!currentUnit || selectedHhIds.length === 0) return;
+    if (!currentUnit) return;
+    const idsToScore =
+      data.targetIds && data.targetIds.length > 0
+        ? data.targetIds
+        : selectedHhIds.length > 0
+        ? selectedHhIds
+        : unitHouseholds.map((h) => h.id);
+
+    if (idsToScore.length === 0) {
+      setToast({ type: 'error', message: 'Không có hộ gia đình nào trong danh sách để chấm!' });
+      return;
+    }
+
     const res = batchScoreHouseholds({
-      householdIds: selectedHhIds,
-      periodId: selectedPeriodId,
+      householdIds: idsToScore,
+      periodId: effectivePeriodId,
       unitId: currentUnit.id,
       unitName: currentUnit.name,
       mode: data.mode,
       violationDetails: data.violationDetails,
       evidenceFiles: data.evidenceFiles,
     });
-    alert(res.message);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
     setSelectedHhIds([]);
   };
 
   const handleQuickToggleExemplary = (hhId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!canEdit) {
-      alert('Hồ sơ đang bị khóa hoặc đã nộp, không thể chỉnh sửa.');
+      setToast({ type: 'error', message: 'Hồ sơ đang bị khóa hoặc đã nộp, không thể chỉnh sửa.' });
       return;
     }
-    const res = toggleExemplaryHousehold(hhId, selectedPeriodId);
-    if (res.isExemplary) {
-      // Toast / alert feedback
-    }
+    const res = toggleExemplaryHousehold(hhId, effectivePeriodId);
+    setToast({
+      type: 'success',
+      message: res.isExemplary
+        ? 'Đã chọn Gia đình văn hóa tiêu biểu ★'
+        : 'Đã bỏ chọn Gia đình văn hóa tiêu biểu',
+    });
   };
 
   const handleRecallSubmission = () => {
     if (!currentUnit) return;
-    if (
-      window.confirm(
-        `Xác nhận thu hồi hồ sơ của "${currentUnit.name}" để tiếp tục chấm điểm và chỉnh sửa? Sau khi thu hồi, tổ trưởng có thể chấm lại hoặc sửa điểm bình thường.`
-      )
-    ) {
-      const res = recallUnitSubmission(currentUnit.id, selectedPeriodId);
-      alert(res.message);
-    }
+    setIsRecallConfirmOpen(true);
+  };
+
+  const handleExecuteRecall = () => {
+    if (!currentUnit) return;
+    const res = recallUnitSubmission(currentUnit.id, effectivePeriodId);
+    setToast({ type: res.success ? 'success' : 'error', message: res.message });
+    setIsRecallConfirmOpen(false);
   };
 
   // Filter households based on activeUnitId and filters
-  const allUnitHouseholds = households.filter((h) => h.unitId === activeUnitId);
+  const allUnitHouseholds = households.filter(
+    (h) =>
+      h.unitId === activeUnitId ||
+      (currentUnit && h.unitName && currentUnit.name && h.unitName.trim() === currentUnit.name.trim())
+  );
 
   // Distinct clusters in this unit
   const unitClusters = Array.from(
@@ -220,8 +275,11 @@ export const ScoringView: React.FC = () => {
         if (c !== clusterFilter) return false;
       }
 
+      if (partyFilter === 'party' && !h.isPartyMemberFamily) return false;
+      if (partyFilter === 'non_party' && h.isPartyMemberFamily) return false;
+
       const sc = scores.find(
-        (s) => s.periodId === selectedPeriodId && s.targetType === 'household' && s.targetId === h.id
+        (s) => s.periodId === effectivePeriodId && s.targetType === 'household' && s.targetId === h.id
       );
 
       if (statusFilter === 'qualified') return sc?.isQualified === true;
@@ -237,24 +295,30 @@ export const ScoringView: React.FC = () => {
   const totalUnitHhs = allUnitHouseholds.length;
   const scoredUnitHhs = allUnitHouseholds.filter((h) => {
     return scores.some(
-      (s) => s.periodId === selectedPeriodId && s.targetType === 'household' && s.targetId === h.id
+      (s) => s.periodId === effectivePeriodId && s.targetType === 'household' && s.targetId === h.id
     );
   }).length;
   const qualifiedUnitHhs = allUnitHouseholds.filter((h) => {
     const sc = scores.find(
-      (s) => s.periodId === selectedPeriodId && s.targetType === 'household' && s.targetId === h.id
+      (s) => s.periodId === effectivePeriodId && s.targetType === 'household' && s.targetId === h.id
     );
     return sc?.isQualified;
   }).length;
   const exemplaryUnitHhs = allUnitHouseholds.filter((h) => {
     const sc = scores.find(
-      (s) => s.periodId === selectedPeriodId && s.targetType === 'household' && s.targetId === h.id
+      (s) => s.periodId === effectivePeriodId && s.targetType === 'household' && s.targetId === h.id
     );
     return sc?.isExemplary;
   }).length;
+  const returnedUnitHhs = allUnitHouseholds.filter((h) => {
+    const sc = scores.find(
+      (s) => s.periodId === effectivePeriodId && s.targetType === 'household' && s.targetId === h.id
+    );
+    return sc?.returnStatus === 'returned_for_revision';
+  }).length;
   const violationUnitHhs = allUnitHouseholds.filter((h) => {
     const sc = scores.find(
-      (s) => s.periodId === selectedPeriodId && s.targetType === 'household' && s.targetId === h.id
+      (s) => s.periodId === effectivePeriodId && s.targetType === 'household' && s.targetId === h.id
     );
     return sc?.hasViolation || (sc && !sc.isQualified);
   }).length;
@@ -307,7 +371,7 @@ export const ScoringView: React.FC = () => {
               <button
                 onClick={handleQuickPass}
                 className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
-                title="Chấm đạt chuẩn cho thôn/tổ và tất cả hộ gia đình"
+                title={`Chấm đạt chuẩn cho ${terms.unitLabelLower} và tất cả hộ gia đình`}
               >
                 <Sparkles className="w-4 h-4 text-emerald-600" />
                 Chấm nhanh toàn bộ đạt (&ge;90đ)
@@ -322,7 +386,7 @@ export const ScoringView: React.FC = () => {
                 className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-sm shadow-red-700/20 cursor-pointer"
               >
                 <Send className="w-4 h-4" />
-                {unitProgress?.status === 'tra_lai' ? 'Nộp lại dữ liệu lên xã' : 'Gửi dữ liệu lên xã'}
+                {unitProgress?.status === 'tra_lai' ? `Nộp lại dữ liệu lên ${terms.communeLevelLower}` : `Gửi dữ liệu lên ${terms.communeLevelLower}`}
               </button>
             )}
           </div>
@@ -340,12 +404,12 @@ export const ScoringView: React.FC = () => {
             ) : unitProgress?.status === 'da_gui' ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-blue-100 text-blue-800 border border-blue-300">
                 <Send className="w-3.5 h-3.5" />
-                ĐÃ GỬI LÊN XÃ (Đang chờ UBND xã thẩm định & duyệt)
+                ĐÃ GỬI LÊN {terms.communeLevel.toUpperCase()} (Đang chờ {terms.communeGov} thẩm định & duyệt)
               </span>
             ) : unitProgress?.status === 'tra_lai' ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-300">
                 <RotateCcw className="w-3.5 h-3.5" />
-                XÃ ĐÃ TRẢ VỀ (Yêu cầu tổ rà soát và chấm lại)
+                {terms.communeLevel.toUpperCase()} ĐÃ TRẢ VỀ (Yêu cầu {terms.unitLabelLower} rà soát và chấm lại)
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-300">
@@ -371,25 +435,67 @@ export const ScoringView: React.FC = () => {
                 Không đạt/VP: <strong className="text-rose-700">{violationUnitHhs}</strong> hộ
               </span>
             )}
+            {returnedUnitHhs > 0 && (
+              <span className="text-rose-700 font-bold flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                <RotateCcw className="w-3 h-3 text-rose-600 animate-spin-reverse" />
+                Cần chấm lại: <strong>{returnedUnitHhs}</strong> hộ
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Alert banner if Commune returned the file */}
+        {/* Alert banner if Commune returned the whole unit file */}
         {unitProgress?.status === 'tra_lai' && (
           <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl text-xs text-rose-950 flex items-start gap-3 shadow-xs">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <span className="font-bold uppercase tracking-wider text-rose-900">
-                HỒ SƠ ĐÃ ĐƯỢC UBND XÃ/PHƯỜNG TRẢ VỀ YÊU CẦU CHẤM LẠI:
+                HỒ SƠ ĐÃ ĐƯỢC {terms.communeGov.toUpperCase()} TRẢ VỀ YÊU CẦU CHẤM LẠI:
               </span>
               <p className="text-rose-800 font-medium italic">
-                "{unitProgress.returnReason || 'UBND Xã yêu cầu rà soát và chấm lại điểm.'}"
+                "{unitProgress.returnReason || `${terms.communeGov} yêu cầu rà soát và chấm lại điểm.`}"
               </p>
               <div className="text-[11px] text-rose-600 flex items-center gap-3 mt-1">
-                <span>Trả bởi: <strong>{unitProgress.returnedBy || 'Cán bộ Xã'}</strong></span>
+                <span>Trả bởi: <strong>{unitProgress.returnedBy || terms.communeOfficer}</strong></span>
                 <span>• Thời gian: {unitProgress.returnedAt || ''}</span>
-                <span>• Quyền sửa điểm: <strong className="text-emerald-700">Đã mở lại cho Tổ trưởng</strong></span>
+                <span>• Quyền sửa điểm: <strong className="text-emerald-700 font-bold">Đã mở lại cho {terms.unitLeader}</strong></span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Alert banner if Commune returned specific households */}
+        {returnedUnitHhs > 0 && (
+          <div className="p-3.5 bg-gradient-to-r from-amber-50 via-rose-50 to-orange-50 border-2 border-amber-400 rounded-xl text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-gradient-to-br from-amber-500 to-rose-600 text-white rounded-lg shrink-0 mt-0.5 shadow-xs">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <span className="font-extrabold text-sm uppercase tracking-wide text-rose-950 flex items-center gap-2">
+                  <span>Có {returnedUnitHhs} hộ gia đình được {terms.communeGov} trả về yêu cầu chấm lại điểm!</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse">
+                    Cần xử lý
+                  </span>
+                </span>
+                <p className="text-slate-700">
+                  {terms.unitLeader} bấm trực tiếp nút <strong className="text-rose-700 font-bold">"Chấm điểm lại"</strong> tại dòng của hộ bên dưới để cập nhật điểm mới và giải trình.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'revision' ? 'all' : 'revision')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                  statusFilter === 'revision'
+                    ? 'bg-rose-700 text-white shadow-rose-700/20'
+                    : 'bg-white hover:bg-rose-100 text-rose-800 border border-rose-300'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                {statusFilter === 'revision' ? 'Đang lọc hộ cần chấm lại' : `Xem riêng ${returnedUnitHhs} hộ cần chấm lại`}
+              </button>
             </div>
           </div>
         )}
@@ -401,10 +507,10 @@ export const ScoringView: React.FC = () => {
               <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold uppercase tracking-wider text-blue-900 block">
-                  HỒ SƠ ĐÃ NỘP LÊN XÃ (ĐANG CHỜ DUYỆT CHỐT)
+                  HỒ SƠ ĐÃ NỘP LÊN {terms.communeLevel.toUpperCase()} (ĐANG CHỜ DUYỆT CHỐT)
                 </span>
                 <p className="text-slate-600 mt-0.5">
-                  Dữ liệu hiện đang được gửi lên xã. Nếu tổ trưởng cần chấm bổ sung, thay đổi điểm hoặc đính kèm minh chứng, hãy bấm <strong>Thu hồi hồ sơ</strong> để mở khóa chấm lại.
+                  Dữ liệu hiện đang được gửi lên {terms.communeLevelLower}. Nếu {terms.unitLeaderLower} cần chấm bổ sung, thay đổi điểm hoặc đính kèm minh chứng, hãy bấm <strong>Thu hồi hồ sơ</strong> để mở khóa chấm lại.
                 </p>
               </div>
             </div>
@@ -453,7 +559,7 @@ export const ScoringView: React.FC = () => {
           }`}
         >
           <Home className="w-4 h-4" />
-          <span>2. Tự chấm Thôn / Tổ & Hồ sơ Báo cáo ({currentUnit ? currentUnit.name : ''})</span>
+          <span>2. Tự chấm {terms.unitLabel} & Hồ sơ Báo cáo ({currentUnit ? currentUnit.name : ''})</span>
         </button>
       </div>
 
@@ -485,9 +591,24 @@ export const ScoringView: React.FC = () => {
                     <option value="unqualified">Chưa đạt (&lt;90đ)</option>
                     <option value="exemplary">Gia đình VH Tiêu biểu ★</option>
                     <option value="violation">Có vi phạm / minh chứng 📎</option>
-                    <option value="revision">Cần chấm lại (Xã trả)</option>
+                    <option value="revision">Cần chấm lại ({terms.communeLevel} trả) {returnedUnitHhs > 0 ? `(${returnedUnitHhs}) ⚠️` : ''}</option>
                   </select>
                 </div>
+
+                {returnedUnitHhs > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(statusFilter === 'revision' ? 'all' : 'revision')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      statusFilter === 'revision'
+                        ? 'bg-rose-700 text-white shadow-xs'
+                        : 'bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 animate-pulse'
+                    }`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Hộ cần chấm lại ({returnedUnitHhs})
+                  </button>
+                )}
 
                 {unitClusters.length > 0 && (
                   <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
@@ -506,22 +627,55 @@ export const ScoringView: React.FC = () => {
                     </select>
                   </div>
                 )}
+
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                  <select
+                    value={partyFilter}
+                    onChange={(e: any) => setPartyFilter(e.target.value)}
+                    className="text-xs font-medium text-slate-700 bg-transparent border-none focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">Toàn bộ hộ</option>
+                    <option value="party">★ Hộ Đảng viên</option>
+                    <option value="non_party">Hộ quần chúng</option>
+                  </select>
+                </div>
               </div>
 
               {canEdit && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
+                      if (selectedHhIds.length === unitHouseholds.length) {
+                        setSelectedHhIds([]);
+                      } else {
+                        setSelectedHhIds(unitHouseholds.map((h) => h.id));
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <CheckSquare className="w-3.5 h-3.5 text-slate-600" />
+                    {selectedHhIds.length === unitHouseholds.length && unitHouseholds.length > 0
+                      ? 'Bỏ chọn tất cả'
+                      : 'Chọn tất cả hộ'}
+                  </button>
+
+                  <button
+                    onClick={() => {
                       if (selectedHhIds.length === 0) {
-                        alert('Vui lòng tích chọn ít nhất 1 hộ để chấm nhanh!');
-                        return;
+                        // If none selected, auto-select all unit households for convenience!
+                        if (unitHouseholds.length > 0) {
+                          setSelectedHhIds(unitHouseholds.map((h) => h.id));
+                        } else {
+                          setToast({ type: 'error', message: 'Không có hộ gia đình nào trong danh sách!' });
+                          return;
+                        }
                       }
                       setIsBatchModalOpen(true);
                     }}
                     className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
                   >
                     <Zap className="w-3.5 h-3.5" />
-                    Chấm nhanh nhiều hộ ({selectedHhIds.length})
+                    Chấm nhanh nhiều hộ ({selectedHhIds.length || unitHouseholds.length})
                   </button>
                 </div>
               )}
@@ -546,6 +700,7 @@ export const ScoringView: React.FC = () => {
                       })
                     }
                     className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                    title="Chấm 90 điểm chuẩn cho các hộ đã chọn"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Chấm Đạt (90đ)
@@ -557,9 +712,34 @@ export const ScoringView: React.FC = () => {
                       })
                     }
                     className="px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                    title="Chấm 95 điểm loại Tốt cho các hộ đã chọn"
                   >
                     <Award className="w-3.5 h-3.5" />
                     Chấm Tốt (95đ)
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleBatchConfirm({
+                        mode: 'ratio_90',
+                      })
+                    }
+                    className="px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                    title="Phân bổ 90% số hộ đạt chuẩn (chuẩn nông thôn)"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Đạt tỷ lệ 90%
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleBatchConfirm({
+                        mode: 'ratio_95',
+                      })
+                    }
+                    className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                    title="Phân bổ 95% số hộ đạt chuẩn (chuẩn đô thị)"
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    Đạt tỷ lệ 95%
                   </button>
                   <button
                     onClick={() =>
@@ -574,10 +754,10 @@ export const ScoringView: React.FC = () => {
                   </button>
                   <button
                     onClick={() => setIsBatchModalOpen(true)}
-                    className="px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                    className="px-3 py-1.5 text-xs font-bold bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
                   >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Khai báo vi phạm / Tùy chọn khác...
+                    <Zap className="w-3.5 h-3.5" />
+                    Tùy chọn khác...
                   </button>
                   <button
                     onClick={() => setSelectedHhIds([])}
@@ -635,17 +815,24 @@ export const ScoringView: React.FC = () => {
                     unitHouseholds.map((hh, idx) => {
                       const sc = scores.find(
                         (s) =>
-                          s.periodId === selectedPeriodId &&
+                          s.periodId === effectivePeriodId &&
                           s.targetType === 'household' &&
                           s.targetId === hh.id
                       );
                       const isSelected = selectedHhIds.includes(hh.id);
+                      const isReturnedForRevision = sc?.returnStatus === 'returned_for_revision';
+                      const isLocked = unitProgress?.status === 'da_chot';
+                      const canEditThisRow = canEdit || (isReturnedForRevision && !isLocked);
 
                       return (
                         <tr
                           key={hh.id}
-                          className={`hover:bg-slate-50/80 transition ${
-                            isSelected ? 'bg-amber-50/50' : ''
+                          className={`transition ${
+                            isReturnedForRevision
+                              ? 'bg-rose-50/70 hover:bg-rose-100/60 border-l-4 border-l-rose-500'
+                              : isSelected
+                              ? 'bg-amber-50/50 hover:bg-amber-100/50'
+                              : 'hover:bg-slate-50/80'
                           }`}
                         >
                           {canEdit && (
@@ -666,8 +853,16 @@ export const ScoringView: React.FC = () => {
                           <td className="p-3 text-center text-slate-400 font-medium">{idx + 1}</td>
                           <td className="p-3 font-mono font-bold text-slate-800">{hh.code}</td>
                           <td className="p-3">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-slate-900">{hh.headName}</span>
+                              {hh.isPartyMemberFamily && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 shadow-2xs"
+                                  title={`Gia đình Đảng viên (${hh.partyMemberCount || 1} Đảng viên)`}
+                                >
+                                  ★ Đảng viên
+                                </span>
+                              )}
                               {sc?.isExemplary && (
                                 <span
                                   className="p-0.5 text-amber-500 hover:text-amber-600 cursor-pointer"
@@ -742,11 +937,32 @@ export const ScoringView: React.FC = () => {
                                 </div>
 
                                 {sc.returnStatus === 'returned_for_revision' && (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white shadow-xs animate-pulse"
+                                      title={`Lý do: ${sc.returnReason || 'Xã yêu cầu chấm lại'}`}
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      Cần chấm lại
+                                    </span>
+                                    {sc.returnReason && (
+                                      <span
+                                        className="text-[10px] text-rose-800 font-medium italic max-w-[130px] line-clamp-1"
+                                        title={sc.returnReason}
+                                      >
+                                        "{sc.returnReason}"
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {sc.returnStatus === 'revised' && (
                                   <span
-                                    className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse"
-                                    title={`Lý do: ${sc.returnReason || 'Xã yêu cầu chấm lại'}`}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300"
+                                    title={sc.revisedAt ? `Đã chấm lại lúc: ${sc.revisedAt}` : 'Đã chấm lại'}
                                   >
-                                    Cần chấm lại
+                                    <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                                    Đã chấm lại
                                   </span>
                                 )}
 
@@ -770,22 +986,42 @@ export const ScoringView: React.FC = () => {
                           {/* Action Button */}
                           <td className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() =>
-                                  handleOpenScoreModal('household', hh.id, `Hộ ${hh.headName}`)
-                                }
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                                  canEdit
-                                    ? sc
-                                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-800'
-                                      : 'bg-red-700 hover:bg-red-800 text-white shadow-xs'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                }`}
-                              >
-                                {canEdit ? (sc ? 'Sửa điểm' : 'Chấm điểm') : 'Xem'}
-                              </button>
+                              {isReturnedForRevision ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleOpenScoreModal(
+                                      'household',
+                                      hh.id,
+                                      `Hộ ${hh.headName}`,
+                                      true /* forceEditable */
+                                    )
+                                  }
+                                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white shadow-md shadow-rose-600/25 ring-2 ring-amber-400 hover:ring-amber-500 cursor-pointer animate-pulse"
+                                  title={`UBND Xã yêu cầu chấm lại: ${sc?.returnReason || 'Rà soát và chấm lại điểm'}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  Chấm điểm lại
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleOpenScoreModal('household', hh.id, `Hộ ${hh.headName}`)
+                                  }
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    canEditThisRow
+                                      ? sc
+                                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                                        : 'bg-red-700 hover:bg-red-800 text-white shadow-xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                  }`}
+                                >
+                                  {canEditThisRow ? (sc ? 'Sửa điểm' : 'Chấm điểm') : 'Xem'}
+                                </button>
+                              )}
 
-                              {canEdit && (
+                              {canEditThisRow && (
                                 <button
                                   type="button"
                                   onClick={(e) => handleQuickToggleExemplary(hh.id, e)}
@@ -824,7 +1060,7 @@ export const ScoringView: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] uppercase font-bold tracking-wider text-red-700">
-                      Tự đánh giá danh hiệu Thôn / Tổ Dân Phố Văn Hóa
+                      Tự đánh giá danh hiệu {terms.unitCulturalTitle}
                     </span>
                     <h3 className="text-base font-bold text-slate-900">
                       {currentUnit.name} ({currentUnit.code})
@@ -837,7 +1073,7 @@ export const ScoringView: React.FC = () => {
                   {(() => {
                     const sc = scores.find(
                       (s) =>
-                        s.periodId === selectedPeriodId &&
+                        s.periodId === effectivePeriodId &&
                         s.targetType === 'unit' &&
                         s.targetId === currentUnit.id
                     );
@@ -860,7 +1096,7 @@ export const ScoringView: React.FC = () => {
                               : 'bg-rose-100 text-rose-800'
                           }`}
                         >
-                          {sc.isQualified ? 'ĐẠT CHUẨN THÔN/TỔ VĂN HÓA' : 'CHƯA ĐẠT CHUẨN'}
+                          {sc.isQualified ? `ĐẠT CHUẨN ${terms.unitCulturalTitle.toUpperCase()}` : 'CHƯA ĐẠT CHUẨN'}
                         </span>
                       </div>
                     );
@@ -870,7 +1106,7 @@ export const ScoringView: React.FC = () => {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-white p-4 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-slate-400 block">Trưởng thôn / Tổ trưởng:</span>
+                  <span className="text-slate-400 block">{terms.unitLeader}:</span>
                   <strong className="text-slate-800 text-xs">{currentUnit.leaderName}</strong>
                 </div>
                 <div>
@@ -899,7 +1135,7 @@ export const ScoringView: React.FC = () => {
                   }`}
                 >
                   <Award className="w-4 h-4" />
-                  {canEdit ? 'Nhập & Chỉnh sửa Phiếu Chấm Thôn/Tổ' : 'Xem chi tiết Phiếu Chấm'}
+                  {canEdit ? `Nhập & Chỉnh sửa Phiếu Chấm ${terms.unitLabel}` : 'Xem chi tiết Phiếu Chấm'}
                 </button>
               </div>
             </div>
@@ -909,13 +1145,13 @@ export const ScoringView: React.FC = () => {
               <EvidenceFileManager
                 files={unitProgress?.reportFiles || currentUnit.reportFiles || []}
                 onChange={(newFiles) => {
-                  updateUnitReportFiles(currentUnit.id, selectedPeriodId, newFiles);
+                  updateUnitReportFiles(currentUnit.id, effectivePeriodId, newFiles);
                 }}
                 readOnly={!canEdit}
                 category="bao_cao_to"
                 templateType="bao_cao_to"
-                title="Hồ sơ & File Báo cáo liên quan của Thôn / Tổ Dân Phố"
-                description="Đính kèm Báo cáo thành tích xây dựng Thôn/Tổ văn hóa, Biên bản cuộc họp bình xét toàn thể nhân dân..."
+                title={`Hồ sơ & File Báo cáo liên quan của ${terms.unitLabel}`}
+                description={`Đính kèm Báo cáo thành tích xây dựng ${terms.unitCulturalTitle}, Biên bản cuộc họp bình xét toàn thể nhân dân...`}
               />
             </div>
           </div>
@@ -932,7 +1168,7 @@ export const ScoringView: React.FC = () => {
           targetName={scoringTarget.targetName}
           unitId={scoringTarget.unitId}
           unitName={scoringTarget.unitName}
-          periodId={selectedPeriodId}
+          periodId={effectivePeriodId}
           initialScore={scoringTarget.initialScore}
           readOnly={scoringTarget.readOnly}
           onSave={handleSaveScoreFromModal}
@@ -944,7 +1180,11 @@ export const ScoringView: React.FC = () => {
         <BatchScoreModal
           isOpen={isBatchModalOpen}
           onClose={() => setIsBatchModalOpen(false)}
-          selectedHouseholds={allUnitHouseholds.filter((h) => selectedHhIds.includes(h.id))}
+          selectedHouseholds={
+            selectedHhIds.length > 0
+              ? allUnitHouseholds.filter((h) => selectedHhIds.includes(h.id))
+              : unitHouseholds
+          }
           unitName={currentUnit.name}
           periodName={selectedPeriod?.name || ''}
           onConfirmBatch={handleBatchConfirm}
@@ -1013,6 +1253,102 @@ export const ScoringView: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+      {/* Quick Pass Confirmation Modal */}
+      {isQuickPassConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+            <div className="bg-emerald-700 text-white px-5 py-4 flex items-center justify-between">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-emerald-300" />
+                Xác nhận tự chấm nhanh toàn bộ đơn vị
+              </h3>
+              <button
+                onClick={() => setIsQuickPassConfirmOpen(false)}
+                className="text-white/80 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Hệ thống sẽ tự động chấm đạt chuẩn (&ge; 90 điểm) cho Thôn/Tổ <strong>"{currentUnit?.name}"</strong> và toàn bộ <strong>{unitHouseholds.length} hộ gia đình</strong> trực thuộc.
+              </p>
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-xs">
+                ✓ Sau khi chấm nhanh, bạn vẫn có thể chỉnh sửa điểm từng hộ hoặc khai báo vi phạm/tiêu biểu trước khi nộp lên xã.
+              </div>
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickPassConfirmOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteQuickPass}
+                  className="px-5 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Xác nhận chấm nhanh
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recall Confirmation Modal */}
+      {isRecallConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+            <div className="bg-amber-600 text-white px-5 py-4 flex items-center justify-between">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-amber-200" />
+                Xác nhận thu hồi hồ sơ
+              </h3>
+              <button
+                onClick={() => setIsRecallConfirmOpen(false)}
+                className="text-white/80 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Bạn có chắc chắn muốn thu hồi hồ sơ của <strong>"{currentUnit?.name}"</strong> để tiếp tục chấm điểm và chỉnh sửa? Sau khi thu hồi, tổ trưởng có thể chấm lại hoặc sửa điểm bình thường.
+              </p>
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsRecallConfirmOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteRecall}
+                  className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Xác nhận thu hồi
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm flex items-center gap-2.5 px-4 py-3 bg-slate-900/95 text-white rounded-xl shadow-2xl border border-slate-700 text-xs font-medium backdrop-blur-xs animate-in fade-in slide-in-from-bottom-3 duration-200">
+          {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+          {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
+          {toast.type === 'info' && <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />}
+          <span>{toast.message}</span>
         </div>
       )}
     </div>

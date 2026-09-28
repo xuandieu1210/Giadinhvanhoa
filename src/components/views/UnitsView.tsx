@@ -15,6 +15,8 @@ export const UnitsView: React.FC = () => {
     getUnitProgress,
     selectedPeriodId,
     currentUser,
+    selectedCommune,
+    terms,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -43,8 +45,8 @@ export const UnitsView: React.FC = () => {
   const openCreateModal = () => {
     setEditingUnit(null);
     setFormData({
-      code: `TDP-0${units.length + 1}`,
-      name: `Tổ dân phố ${units.length + 1}`,
+      code: `${terms.isWard ? 'TDP' : 'THON'}-0${units.length + 1}`,
+      name: `${terms.unitLabel} ${units.length + 1}`,
       leaderName: '',
       leaderPhone: '',
       totalHouseholds: 120,
@@ -71,7 +73,7 @@ export const UnitsView: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.code.trim()) {
-      alert('Vui lòng nhập mã và tên thôn/tổ!');
+      alert(`Vui lòng nhập mã và tên ${terms.unitLabelLower}!`);
       return;
     }
 
@@ -101,9 +103,9 @@ export const UnitsView: React.FC = () => {
               <Home className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Danh mục Thôn / Tổ Dân Phố</h2>
+              <h2 className="text-lg font-bold text-slate-900">Danh mục {terms.unitLabel}</h2>
               <p className="text-xs text-slate-500">
-                Quản lý danh sách các đơn vị thôn, buôn, tổ dân phố trực thuộc xã/phường
+                Quản lý danh sách các {terms.unitLabelLower} trực thuộc {selectedCommune?.name || terms.communeLevel}
               </p>
             </div>
           </div>
@@ -133,7 +135,7 @@ export const UnitsView: React.FC = () => {
                 className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-sm shadow-red-700/20 transition"
               >
                 <Plus className="w-4 h-4" />
-                Thêm Thôn/Tổ mới
+                Thêm {terms.unitLabel} mới
               </button>
             </>
           )}
@@ -168,8 +170,8 @@ export const UnitsView: React.FC = () => {
               <tr>
                 <th className="p-3 w-12 text-center">STT</th>
                 <th className="p-3">Mã đơn vị</th>
-                <th className="p-3">Tên Thôn / Tổ dân phố</th>
-                <th className="p-3">Trưởng thôn/tổ & SĐT</th>
+                <th className="p-3">Tên {terms.unitLabel}</th>
+                <th className="p-3">{terms.unitLeader} & SĐT</th>
                 <th className="p-3 text-center">Số hộ</th>
                 <th className="p-3 text-center">Nhân khẩu</th>
                 <th className="p-3">Trạng thái đợt này</th>
@@ -207,7 +209,7 @@ export const UnitsView: React.FC = () => {
                           </span>
                         ) : prog.status === 'da_gui' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                            ↗ Đã gửi lên xã
+                            ↗ Đã gửi lên {terms.communeLevelLower}
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
@@ -251,7 +253,7 @@ export const UnitsView: React.FC = () => {
           <div className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-6">
             <div className="bg-red-700 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-bold">
-                {editingUnit ? 'Sửa thông tin Thôn / Tổ' : 'Thêm mới Thôn / Tổ Dân Phố'}
+                {editingUnit ? `Sửa thông tin ${terms.unitLabel}` : `Thêm mới ${terms.unitLabel}`}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -264,7 +266,7 @@ export const UnitsView: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Mã thôn/tổ *
+                    Mã {terms.unitLabelLower} *
                   </label>
                   <input
                     type="text"
@@ -276,7 +278,7 @@ export const UnitsView: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Tên Thôn / Tổ *
+                    Tên {terms.unitLabel} *
                   </label>
                   <input
                     type="text"
@@ -291,7 +293,7 @@ export const UnitsView: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Trưởng thôn / Tổ trưởng
+                    {terms.unitLeader}
                   </label>
                   <input
                     type="text"

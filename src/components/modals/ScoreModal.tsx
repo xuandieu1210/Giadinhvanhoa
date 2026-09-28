@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  RotateCcw,
   Sparkles,
   Star,
   X,
@@ -606,9 +607,20 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
             {!readOnly && (
               <button
                 type="submit"
-                className="px-6 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-800 rounded-lg transition shadow-md shadow-red-700/20"
+                className={`px-6 py-2 text-sm font-bold text-white rounded-lg transition shadow-md flex items-center gap-2 cursor-pointer ${
+                  initialScore?.returnStatus === 'returned_for_revision'
+                    ? 'bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 shadow-rose-600/25 ring-2 ring-amber-400'
+                    : 'bg-red-700 hover:bg-red-800 shadow-red-700/20'
+                }`}
               >
-                Lưu kết quả chấm điểm
+                {initialScore?.returnStatus === 'returned_for_revision' ? (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    Lưu kết quả chấm lại
+                  </>
+                ) : (
+                  'Lưu kết quả chấm điểm'
+                )}
               </button>
             )}
           </div>

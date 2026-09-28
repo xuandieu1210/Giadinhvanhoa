@@ -4,6 +4,7 @@ export interface Commune {
   id: string;
   code: string;
   name: string; // VD: Xã Hòa Khương, Xã Hòa Tiến, Phường Thạch Thang
+  communeType?: 'xa' | 'phuong' | 'thi_tran'; // Phân định rõ Xã hay Phường
   district: string; // Huyện Hòa Vang, Quận Hải Châu...
   province: string; // TP. Đà Nẵng...
   phone?: string;
@@ -90,6 +91,8 @@ export interface Household {
   residentialCluster?: string; // Cụm dân cư (ví dụ: Cụm 1, Cụm 2, Cụm 3, Cụm trung tâm...)
   clanId?: string; // Tùy chọn (không bắt buộc)
   clanName?: string;
+  isPartyMemberFamily?: boolean; // Hộ gia đình Đảng viên (Có / Không)
+  partyMemberCount?: number; // Số lượng Đảng viên trong gia đình
   phone?: string;
   notes?: string;
 }
@@ -158,7 +161,8 @@ export interface EvaluationScoreItem {
   hasViolation?: boolean; // Có vi phạm (điểm trừ, vi phạm quy ước, pháp luật)
   violationDetails?: string; // Chi tiết vi phạm / nguyên nhân không đạt
   evidenceFiles?: EvidenceFile[]; // Tệp minh chứng không đạt, biên bản xử phạt, hình ảnh vi phạm
-  returnStatus?: 'none' | 'returned_for_revision'; // Cấp xã trả hồ sơ hộ này để tổ chấm lại
+  returnStatus?: 'none' | 'returned_for_revision' | 'revised'; // Cấp xã trả hồ sơ hộ này để tổ chấm lại
+  revisedAt?: string; // Thời gian tổ đã hoàn tất chấm lại
   returnReason?: string; // Lý do trả hồ sơ riêng cho hộ
 
   evaluatedByLevel: 'to' | 'xa'; // Điểm này do Tổ chấm hay do Xã chấm/chốt

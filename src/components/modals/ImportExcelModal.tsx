@@ -73,8 +73,11 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
           'Giới tính': 'Nam',
           'Năm sinh': 1978,
           'Số nhân khẩu': 4,
+          'Gia đình Đảng viên': 'Có',
+          'Số Đảng viên': 1,
           'Địa chỉ': 'Số 102 Đường Lê Duẩn',
           'Thôn/Tổ': 'Tổ dân phố 1 (Thôn 1)',
+          'Cụm dân cư': 'Cụm 1',
           'Tộc họ': 'Tộc Trần Đình',
           'Số điện thoại': '0905.678.910',
           'Ghi chú': 'Gia đình chấp hành tốt',
@@ -139,19 +142,28 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
         notes: r['Ghi chú'] || '',
       }));
     } else {
-      mappedData = previewRows.map((r, i) => ({
-        code: r['Mã hộ'] || `HGĐ-NEW-${i + 1}`,
-        headName: r['Chủ hộ'] || r['Họ và tên'] || `Hộ mới ${i + 1}`,
-        gender: r['Giới tính'] === 'Nữ' ? 'Nữ' : 'Nam',
-        birthYear: Number(r['Năm sinh']) || undefined,
-        memberCount: Number(r['Số nhân khẩu']) || 4,
-        address: r['Địa chỉ'] || 'Chưa cập nhật',
-        unitId: 'unit-1',
-        unitName: r['Thôn/Tổ'] || 'Tổ dân phố 1 (Thôn 1)',
-        clanName: r['Tộc họ'] || undefined,
-        phone: r['Số điện thoại'] || r['SĐT'] || '',
-        notes: r['Ghi chú'] || '',
-      }));
+      mappedData = previewRows.map((r, i) => {
+        const isParty =
+          String(r['Gia đình Đảng viên'] || r['Đảng viên'] || '').toLowerCase().includes('có') ||
+          String(r['Gia đình Đảng viên'] || '').trim().toLowerCase() === 'x' ||
+          Number(r['Số Đảng viên']) > 0;
+        return {
+          code: r['Mã hộ'] || `HGĐ-NEW-${i + 1}`,
+          headName: r['Chủ hộ'] || r['Họ và tên'] || `Hộ mới ${i + 1}`,
+          gender: r['Giới tính'] === 'Nữ' ? 'Nữ' : 'Nam',
+          birthYear: Number(r['Năm sinh']) || undefined,
+          memberCount: Number(r['Số nhân khẩu']) || 4,
+          isPartyMemberFamily: isParty,
+          partyMemberCount: isParty ? (Number(r['Số Đảng viên']) || 1) : 0,
+          address: r['Địa chỉ'] || 'Chưa cập nhật',
+          unitId: 'unit-1',
+          unitName: r['Thôn/Tổ'] || 'Tổ dân phố 1 (Thôn 1)',
+          residentialCluster: r['Cụm dân cư'] || r['Cụm'] || 'Cụm 1',
+          clanName: r['Tộc họ'] || undefined,
+          phone: r['Số điện thoại'] || r['SĐT'] || '',
+          notes: r['Ghi chú'] || '',
+        };
+      });
     }
 
     onImportSuccess(mappedData);

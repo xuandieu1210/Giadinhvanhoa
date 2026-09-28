@@ -25,7 +25,7 @@ import {
   Users2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { exportReportToExcel, exportSubmissionStatusToExcel } from '../../utils/excel';
+import { exportReportToExcel, exportSubmissionStatusToExcel, exportWardSummaryExcel } from '../../utils/excel';
 
 export const ReportsView: React.FC = () => {
   const {
@@ -42,7 +42,7 @@ export const ReportsView: React.FC = () => {
 
   const [activeReportYear, setActiveReportYear] = useState<number>(2026);
   const [activeSubTab, setActiveSubTab] = useState<
-    'progress' | 'exemplary' | 'violations' | 'documents'
+    'progress' | 'exemplary' | 'violations' | 'documents' | 'ward_summary'
   >('progress');
 
   // Find period matching selected year or default to active
@@ -55,6 +55,26 @@ export const ReportsView: React.FC = () => {
 
   // Filter scores for this period
   const periodScores = scores.filter((s) => s.periodId === periodId);
+
+  // Summary calculations for ward summary table
+  const sumTotalHhs = units.reduce((acc, u) => acc + households.filter(h => h.unitId === u.id).length, 0);
+  const sumQualified = units.reduce((acc, u) => {
+    const uHhs = households.filter(h => h.unitId === u.id);
+    return acc + uHhs.filter(h => {
+      const sc = periodScores.find(s => s.targetId === h.id && s.targetType === 'household' && s.periodId === periodId);
+      return sc?.isQualified;
+    }).length;
+  }, 0);
+  const sumUnqualified = sumTotalHhs - sumQualified;
+  const sumPartyUnqualified = units.reduce((acc, u) => {
+    const uHhs = households.filter(h => h.unitId === u.id);
+    return acc + uHhs.filter(h => {
+      const sc = periodScores.find(s => s.targetId === h.id && s.targetType === 'household' && s.periodId === periodId);
+      const isParty = h.isPartyMemberFamily || (h.partyMemberCount && h.partyMemberCount > 0);
+      const isNotQual = !sc || !sc.isQualified;
+      return isParty && isNotQual;
+    }).length;
+  }, 0);
 
   // Calculations for Households
   const totalHhs = households.length;
@@ -464,6 +484,18 @@ export const ReportsView: React.FC = () => {
             <FileCheck className="w-4 h-4 text-blue-600" />
             <span>4. Quyết định công nhận & Báo cáo cơ sở</span>
           </button>
+
+          <button
+            onClick={() => setActiveSubTab('ward_summary')}
+            className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeSubTab === 'ward_summary'
+                ? 'border-emerald-600 text-emerald-700 bg-white rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-emerald-600" />
+            <span>5. Tổng hợp GĐVH toàn phường/xã</span>
+          </button>
         </div>
 
         {/* SUBTAB 1: PROGRESS OF UNITS */}
@@ -839,6 +871,104 @@ export const ReportsView: React.FC = () => {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* SUBTAB 5: WARD SUMMARY REPORT */}
+        {activeSubTab === 'ward_summary' && (
+          <div className="p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-50/50 p-4 rounded-xl border border-emerald-200">
+              <div>
+                <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wide">
+                  Báo cáo tổng hợp danh sách gia đình văn hóa toàn {selectedCommune?.communeType === 'phuong' ? 'phường' : 'xã'} {selectedCommune?.name || ''}
+                </h4>
+                <p className="text-[11px] text-emerald-700 mt-0.5">
+                  Thống kê kết quả bình xét Gia đình văn hóa chi tiết theo từng Thôn / Tổ dân phố (Đợt: {currentPeriod?.name || ''} - Năm {currentPeriod?.year})
+                </p>
+              </div>
+              <button
+                onClick={() => exportWardSummaryExcel(currentPeriod, units, households, scores)}
+                className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Xuất Excel Báo Cáo Tổng Hợp
+              </button>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-800 font-bold text-center border-b border-slate-200">
+                    <th className="p-3 border-r border-slate-200 w-12" rowSpan={2}>TT</th>
+                    <th className="p-3 border-r border-slate-200 text-left" rowSpan={2}>Tổ dân phố</th>
+                    <th className="p-3 border-r border-slate-200 w-24" rowSpan={2}>Tổng số hộ</th>
+                    <th className="p-2 border-r border-slate-200" colSpan={2}>Hộ đạt GĐVH</th>
+                    <th className="p-2 border-r border-slate-200" colSpan={2}>Hộ không đạt GĐVH</th>
+                    <th className="p-3 w-40" rowSpan={2}>Hộ Đảng viên, CNVC không đạt GĐVH</th>
+                  </tr>
+                  <tr className="bg-slate-50 text-slate-700 font-bold text-center border-b border-slate-200 text-[11px]">
+                    <th className="p-2 border-r border-slate-200 w-24">Hộ GĐ</th>
+                    <th className="p-2 border-r border-slate-200 w-20">Tỷ lệ %</th>
+                    <th className="p-2 border-r border-slate-200 w-24">Hộ GĐ</th>
+                    <th className="p-2 border-r border-slate-200 w-20">Tỷ lệ %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {units.map((u, idx) => {
+                    const uHhs = households.filter((h) => h.unitId === u.id);
+                    const totalHh = uHhs.length;
+                    const qualifiedHhs = uHhs.filter((h) => {
+                      const sc = periodScores.find(
+                        (s) => s.targetType === 'household' && s.targetId === h.id
+                      );
+                      return sc?.isQualified;
+                    });
+                    const qualCount = qualifiedHhs.length;
+                    const qualRate = totalHh > 0 ? ((qualCount / totalHh) * 100).toFixed(2) : '0';
+
+                    const unqualCount = totalHh - qualCount;
+                    const unqualRate = totalHh > 0 ? ((unqualCount / totalHh) * 100).toFixed(2) : '0';
+
+                    const partyUnqualCount = uHhs.filter((h) => {
+                      const sc = periodScores.find(
+                        (s) => s.targetType === 'household' && s.targetId === h.id
+                      );
+                      const isParty = h.isPartyMemberFamily || (h.partyMemberCount && h.partyMemberCount > 0);
+                      const isNotQual = !sc || !sc.isQualified;
+                      return isParty && isNotQual;
+                    }).length;
+
+                    return (
+                      <tr key={u.id} className="hover:bg-slate-50/80 transition text-center">
+                        <td className="p-3 border-r border-slate-100 font-medium text-slate-400">{idx + 1}</td>
+                        <td className="p-3 border-r border-slate-100 text-left font-semibold text-slate-900">{u.name}</td>
+                        <td className="p-3 border-r border-slate-100 font-mono font-bold text-slate-800">{totalHh}</td>
+                        <td className="p-3 border-r border-slate-100 font-bold text-emerald-700">{qualCount}</td>
+                        <td className="p-3 border-r border-slate-100 font-mono text-emerald-600">{qualRate}%</td>
+                        <td className="p-3 border-r border-slate-100 font-bold text-rose-700">{unqualCount}</td>
+                        <td className="p-3 border-r border-slate-100 font-mono text-rose-600">{unqualRate}%</td>
+                        <td className="p-3 font-bold text-amber-800">{partyUnqualCount}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold text-slate-900 text-center border-t-2 border-slate-200">
+                    <td className="p-3 border-r border-slate-200" colSpan={2}>TỔNG CỘNG TOÀN XÃ / PHƯỜNG</td>
+                    <td className="p-3 border-r border-slate-200 font-mono">{sumTotalHhs}</td>
+                    <td className="p-3 border-r border-slate-200 text-emerald-700">{sumQualified}</td>
+                    <td className="p-3 border-r border-slate-200 font-mono text-emerald-700">
+                      {sumTotalHhs > 0 ? ((sumQualified / sumTotalHhs) * 100).toFixed(2) : '0'}%
+                    </td>
+                    <td className="p-3 border-r border-slate-200 text-rose-700">{sumUnqualified}</td>
+                    <td className="p-3 border-r border-slate-200 font-mono text-rose-700">
+                      {sumTotalHhs > 0 ? ((sumUnqualified / sumTotalHhs) * 100).toFixed(2) : '0'}%
+                    </td>
+                    <td className="p-3 text-amber-800">{sumPartyUnqualified}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
         )}
