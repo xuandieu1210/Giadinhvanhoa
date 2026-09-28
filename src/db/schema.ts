@@ -5,6 +5,7 @@ export const communes = pgTable('communes', {
   name: text('name').notNull(),
   code: text('code').notNull(),
   communeType: text('commune_type').notNull(), // 'xa' | 'phuong' | 'tt'
+  regionType: text('region_type').default('dong_bang'), // 'dong_bang' | 'mien_nui'
   activePeriodId: text('active_period_id'),
   createdAt: timestamp('created_at').defaultNow(),
 });

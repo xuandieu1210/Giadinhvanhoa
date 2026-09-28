@@ -25,6 +25,7 @@ export const CommunesView: React.FC = () => {
     name: '',
     code: '',
     communeType: 'xa' as 'xa' | 'phuong' | 'thi_tran',
+    regionType: 'dong_bang' as 'dong_bang' | 'mien_nui',
     district: 'Huyện Hòa Vang',
     province: 'TP. Đà Nẵng',
     leaderName: '',
@@ -39,6 +40,7 @@ export const CommunesView: React.FC = () => {
       name: '',
       code: `xa-${Date.now().toString().slice(-4)}`,
       communeType: 'xa',
+      regionType: 'dong_bang',
       district: 'Huyện Hòa Vang',
       province: 'TP. Đà Nẵng',
       leaderName: '',
@@ -55,6 +57,7 @@ export const CommunesView: React.FC = () => {
       name: c.name,
       code: c.code || '',
       communeType: c.communeType || (c.name.toLowerCase().includes('phường') ? 'phuong' : 'xa'),
+      regionType: c.regionType || 'dong_bang',
       district: c.district || 'Huyện Hòa Vang',
       province: c.province || 'TP. Đà Nẵng',
       leaderName: c.leaderName || '',
@@ -76,6 +79,7 @@ export const CommunesView: React.FC = () => {
       name: formData.name.trim(),
       code: formData.code.trim() || `commune-${Date.now()}`,
       communeType: formData.communeType,
+      regionType: formData.regionType,
       district: formData.district.trim(),
       province: formData.province.trim(),
       leaderName: formData.leaderName.trim(),
@@ -165,6 +169,15 @@ export const CommunesView: React.FC = () => {
                           : c.communeType === 'thi_tran'
                           ? 'Thị trấn'
                           : 'Xã'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          c.regionType === 'mien_nui'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-teal-100 text-teal-800 border border-teal-200'
+                        }`}
+                      >
+                        {c.regionType === 'mien_nui' ? 'Miền núi' : 'Đồng bằng'}
                       </span>
                       <span className="text-[11px] font-mono text-slate-400 font-medium">
                         Mã: {c.code}
@@ -296,15 +309,21 @@ export const CommunesView: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Mã định danh (Code)
+                    Vùng địa lý (Chỉ tiêu) *
                   </label>
-                  <input
-                    type="text"
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden font-mono"
-                    placeholder="VD: xa-hoa-khuong"
-                  />
+                  <select
+                    value={formData.regionType}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        regionType: e.target.value as 'dong_bang' | 'mien_nui',
+                      })
+                    }
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden bg-white cursor-pointer font-medium"
+                  >
+                    <option value="dong_bang">Đồng bằng / Đô thị</option>
+                    <option value="mien_nui">Miền núi / Vùng cao</option>
+                  </select>
                 </div>
               </div>
 

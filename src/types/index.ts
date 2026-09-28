@@ -5,6 +5,7 @@ export interface Commune {
   code: string;
   name: string; // VD: Xã Hòa Khương, Xã Hòa Tiến, Phường Thạch Thang
   communeType?: 'xa' | 'phuong' | 'thi_tran'; // Phân định rõ Xã hay Phường
+  regionType?: 'dong_bang' | 'mien_nui'; // Vùng: Đồng bằng hay Miền núi
   district: string; // Huyện Hòa Vang, Quận Hải Châu...
   province: string; // TP. Đà Nẵng...
   phone?: string;

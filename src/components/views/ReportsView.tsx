@@ -38,6 +38,7 @@ export const ReportsView: React.FC = () => {
     scores,
     progressList,
     selectedCommune,
+    currentUser,
   } = useApp();
 
   const [activeReportYear, setActiveReportYear] = useState<number>(2026);
@@ -56,9 +57,17 @@ export const ReportsView: React.FC = () => {
   // Filter scores for this period
   const periodScores = scores.filter((s) => s.periodId === periodId);
 
-  // Summary calculations for ward summary table
-  const sumTotalHhs = units.reduce((acc, u) => acc + households.filter(h => h.unitId === u.id).length, 0);
-  const sumQualified = units.reduce((acc, u) => {
+  // Role scoping: If user is village/residential group leader (to_truong), scope data to their unit
+  const isUnitLeader = currentUser?.role === 'to_truong' && currentUser?.unitId;
+  const targetUnitId = isUnitLeader ? currentUser.unitId : null;
+
+  const currentUnits = targetUnitId ? units.filter((u) => u.id === targetUnitId) : units;
+  const currentHouseholds = targetUnitId ? households.filter((h) => h.unitId === targetUnitId) : households;
+  const currentClans = targetUnitId ? clans.filter((c) => c.unitId === targetUnitId) : clans;
+
+  // Summary calculations
+  const sumTotalHhs = currentUnits.reduce((acc, u) => acc + households.filter(h => h.unitId === u.id).length, 0);
+  const sumQualified = currentUnits.reduce((acc, u) => {
     const uHhs = households.filter(h => h.unitId === u.id);
     return acc + uHhs.filter(h => {
       const sc = periodScores.find(s => s.targetId === h.id && s.targetType === 'household' && s.periodId === periodId);
@@ -66,7 +75,7 @@ export const ReportsView: React.FC = () => {
     }).length;
   }, 0);
   const sumUnqualified = sumTotalHhs - sumQualified;
-  const sumPartyUnqualified = units.reduce((acc, u) => {
+  const sumPartyUnqualified = currentUnits.reduce((acc, u) => {
     const uHhs = households.filter(h => h.unitId === u.id);
     return acc + uHhs.filter(h => {
       const sc = periodScores.find(s => s.targetId === h.id && s.targetType === 'household' && s.periodId === periodId);
@@ -77,55 +86,55 @@ export const ReportsView: React.FC = () => {
   }, 0);
 
   // Calculations for Households
-  const totalHhs = households.length;
-  const scoredHhs = households.filter((h) =>
+  const totalHhs = currentHouseholds.length;
+  const scoredHhs = currentHouseholds.filter((h) =>
     periodScores.some((s) => s.targetType === 'household' && s.targetId === h.id)
   );
-  const qualifiedHhs = households.filter((h) => {
+  const qualifiedHhs = currentHouseholds.filter((h) => {
     const sc = periodScores.find((s) => s.targetType === 'household' && s.targetId === h.id);
     return sc?.isQualified;
   });
   const hhRate = totalHhs > 0 ? ((qualifiedHhs.length / totalHhs) * 100).toFixed(1) : '0';
 
   // Exemplary households
-  const exemplaryHhs = households.filter((h) => {
+  const exemplaryHhs = currentHouseholds.filter((h) => {
     const sc = periodScores.find((s) => s.targetType === 'household' && s.targetId === h.id);
     return sc?.isExemplary;
   });
 
   // Violation / unqualified households
-  const violationHhs = households.filter((h) => {
+  const violationHhs = currentHouseholds.filter((h) => {
     const sc = periodScores.find((s) => s.targetType === 'household' && s.targetId === h.id);
     return sc && (!sc.isQualified || sc.hasViolation || (sc.evidenceFiles && sc.evidenceFiles.length > 0));
   });
 
   // Calculations for Units (Thôn / Tổ)
-  const totalUnits = units.length;
-  const qualifiedUnits = units.filter((u) => {
+  const totalUnits = currentUnits.length;
+  const qualifiedUnits = currentUnits.filter((u) => {
     const sc = periodScores.find((s) => s.targetType === 'unit' && s.targetId === u.id);
     return sc?.isQualified;
   });
   const unitRate = totalUnits > 0 ? ((qualifiedUnits.length / totalUnits) * 100).toFixed(1) : '0';
 
-  // Calculations for Clans (Tộc họ văn hóa - Xã trực tiếp công nhận)
-  const totalClans = clans.length;
-  const qualifiedClans = clans.filter((c) => c.culturalStatus === 'dat_chuan');
+  // Calculations for Clans
+  const totalClans = currentClans.length;
+  const qualifiedClans = currentClans.filter((c) => c.culturalStatus === 'dat_chuan');
   const clanRate = totalClans > 0 ? ((qualifiedClans.length / totalClans) * 100).toFixed(1) : '0';
 
   // Progress submission status breakdown
-  const submittedUnits = units.filter((u) => {
+  const submittedUnits = currentUnits.filter((u) => {
     const prog = progressList.find((p) => p.unitId === u.id && p.periodId === periodId);
     return prog?.status === 'da_gui' || prog?.status === 'da_chot';
   });
-  const unsubmittedUnits = units.filter((u) => {
+  const unsubmittedUnits = currentUnits.filter((u) => {
     const prog = progressList.find((p) => p.unitId === u.id && p.periodId === periodId);
     return !prog || prog.status === 'chua_gui';
   });
-  const returnedUnits = units.filter((u) => {
+  const returnedUnits = currentUnits.filter((u) => {
     const prog = progressList.find((p) => p.unitId === u.id && p.periodId === periodId);
     return prog?.status === 'tra_lai';
   });
-  const approvedUnits = units.filter((u) => {
+  const approvedUnits = currentUnits.filter((u) => {
     const prog = progressList.find((p) => p.unitId === u.id && p.periodId === periodId);
     return prog?.status === 'da_chot';
   });
@@ -136,7 +145,7 @@ export const ReportsView: React.FC = () => {
     const p = periods.find((x) => x.year === yr);
     if (!p) return { year: yr, rate: 85, qualified: 0, total: totalHhs };
 
-    const yrScores = scores.filter((s) => s.periodId === p.id && s.targetType === 'household');
+    const yrScores = scores.filter((s) => s.periodId === p.id && s.targetType === 'household' && currentHouseholds.some(h => h.id === s.targetId));
     const yrQualified = yrScores.filter((s) => s.isQualified).length;
     let calcRate = totalHhs > 0 ? Math.round((yrQualified / totalHhs) * 100) : 0;
     if (yr === 2024) calcRate = 88;
@@ -152,14 +161,17 @@ export const ReportsView: React.FC = () => {
   });
 
   // Score brackets breakdown
-  const excellentHhs = periodScores.filter(
-    (s) => s.targetType === 'household' && s.finalScore >= 95
+  const currentHouseholdIds = new Set(currentHouseholds.map(h => h.id));
+  const currentPeriodScores = periodScores.filter(s => s.targetType === 'household' && currentHouseholdIds.has(s.targetId));
+
+  const excellentHhs = currentPeriodScores.filter(
+    (s) => s.finalScore >= 95
   ).length;
-  const goodHhs = periodScores.filter(
-    (s) => s.targetType === 'household' && s.finalScore >= 90 && s.finalScore < 95
+  const goodHhs = currentPeriodScores.filter(
+    (s) => s.finalScore >= 90 && s.finalScore < 95
   ).length;
-  const unpassedHhs = periodScores.filter(
-    (s) => s.targetType === 'household' && s.finalScore < 90
+  const unpassedHhs = currentPeriodScores.filter(
+    (s) => s.finalScore < 90
   ).length;
 
   const handlePrint = () => {
