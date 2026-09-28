@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Award,
@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { EvaluationScoreItem, EvidenceFile } from '../../types';
+import { CriteriaScoreMap, EvaluationScoreItem, EvidenceFile } from '../../types';
 import { EvidenceFileManager } from '../common/EvidenceFileManager';
 
 interface ScoreModalProps {
@@ -34,12 +34,8 @@ interface ScoreModalProps {
     targetName: string;
     unitId: string;
     unitName: string;
-    criteriaScores: {
-      standard1: number;
-      standard2: number;
-      standard3: number;
-      standard4: number;
-    };
+    criteriaScores: CriteriaScoreMap;
+    itemScores?: Record<string, number>;
     bonusPoints: number;
     penaltyPoints: number;
     comments?: string;
@@ -63,12 +59,23 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
   readOnly = false,
   onSave,
 }) => {
-  const { criteria, bonusCategories, penaltyCategories } = useApp();
+  const { criteria, bonusCategories, penaltyCategories, selectedCommune, getScoringStandards } = useApp();
 
-  const [s1, setS1] = useState<number>(initialScore?.criteriaScores.standard1 ?? 28);
-  const [s2, setS2] = useState<number>(initialScore?.criteriaScores.standard2 ?? 28);
-  const [s3, setS3] = useState<number>(initialScore?.criteriaScores.standard3 ?? 28);
-  const [s4, setS4] = useState<number>(initialScore?.criteriaScores.standard4 ?? 9);
+  // Vùng miền quyết định bộ tiêu chí/điểm tối đa áp dụng (đồng bằng, đô thị hoặc miền núi, DTTS)
+  const regionType = selectedCommune?.regionType || 'dong_bang';
+  const standards = useMemo(
+    () => getScoringStandards(targetType, regionType),
+    [targetType, regionType, criteria]
+  );
+  const totalMaxPoints = useMemo(
+    () => standards.reduce((sum, s) => sum + s.maxPoints, 0) || 100,
+    [standards]
+  );
+
+  const [scoreValues, setScoreValues] = useState<CriteriaScoreMap>({});
+  const [itemScores, setItemScores] = useState<Record<string, number>>({});
+  // Chấm chi tiết từng tiêu chí thành phần (mặc định) hoặc chấm nhanh theo tổng mỗi tiêu chuẩn
+  const [isDetailedMode, setIsDetailedMode] = useState<boolean>(true);
   const [bonus, setBonus] = useState<number>(initialScore?.bonusPoints ?? 1);
   const [penalty, setPenalty] = useState<number>(initialScore?.penaltyPoints ?? 0);
   const [comments, setComments] = useState<string>(initialScore?.comments ?? '');
@@ -90,18 +97,82 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
   const [showPenaltyPicker, setShowPenaltyPicker] = useState(false);
   const [showCriteriaDetail, setShowCriteriaDetail] = useState(false);
 
+  // Nạp lại toàn bộ phiếu mỗi khi đổi đối tượng chấm (hộ/thôn khác) hoặc đổi bộ tiêu chuẩn áp dụng
+  useEffect(() => {
+    const initialStd: CriteriaScoreMap = {};
+    const initialItems: Record<string, number> = {};
+    standards.forEach((std) => {
+      const existingStdScore = initialScore?.criteriaScores?.[std.key];
+      const ratio =
+        existingStdScore !== undefined && std.maxPoints > 0 ? existingStdScore / std.maxPoints : 0.93;
+      initialStd[std.key] = existingStdScore !== undefined ? existingStdScore : Math.round(std.maxPoints * 0.93);
+      std.items.forEach((item) => {
+        const existingItemScore = initialScore?.itemScores?.[item.id];
+        initialItems[item.id] =
+          existingItemScore !== undefined ? existingItemScore : Math.round(item.maxPoints * ratio);
+      });
+    });
+    setScoreValues(initialStd);
+    setItemScores(initialItems);
+    setIsDetailedMode(true);
+    setBonus(initialScore?.bonusPoints ?? 1);
+    setPenalty(initialScore?.penaltyPoints ?? 0);
+    setComments(initialScore?.comments ?? '');
+    setIsExemplary(initialScore?.isExemplary ?? false);
+    setHasViolation(initialScore?.hasViolation ?? ((initialScore?.penaltyPoints ?? 0) > 0));
+    setViolationDetails(initialScore?.violationDetails ?? '');
+    setEvidenceFiles(initialScore?.evidenceFiles ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetId, periodId, standards, initialScore]);
+
   if (!isOpen) return null;
 
-  const totalStandard = s1 + s2 + s3 + s4;
+  const getStandardTotal = (stdKey: string, items: { id: string }[]) =>
+    items.reduce((sum, it) => sum + (itemScores[it.id] || 0), 0);
+
+  const totalStandard = isDetailedMode
+    ? standards.reduce((sum, std) => sum + getStandardTotal(std.key, std.items), 0)
+    : Object.values(scoreValues).reduce((sum, v) => sum + (v || 0), 0);
   const finalScore = Math.max(0, Math.min(100, totalStandard + bonus - penalty));
   // Ngưỡng đạt chuẩn: từ 90 điểm trở lên
   const isQualified = finalScore >= 90;
 
+  // Chuyển đổi qua lại giữa chấm chi tiết từng tiêu chí và chấm nhanh theo tổng tiêu chuẩn
+  const handleToggleDetailedMode = () => {
+    if (isDetailedMode) {
+      const nextStd: CriteriaScoreMap = {};
+      standards.forEach((std) => {
+        nextStd[std.key] = getStandardTotal(std.key, std.items);
+      });
+      setScoreValues(nextStd);
+    } else {
+      const nextItems: Record<string, number> = {};
+      standards.forEach((std) => {
+        const total = scoreValues[std.key] ?? 0;
+        const ratio = std.maxPoints > 0 ? total / std.maxPoints : 0;
+        std.items.forEach((item) => {
+          nextItems[item.id] = Math.round(item.maxPoints * ratio);
+        });
+      });
+      setItemScores(nextItems);
+    }
+    setIsDetailedMode((prev) => !prev);
+  };
+
   const handleApplyPresetPass = () => {
-    setS1(29);
-    setS2(29);
-    setS3(28);
-    setS4(9);
+    const presetItems: Record<string, number> = {};
+    const presetStd: CriteriaScoreMap = {};
+    standards.forEach((std) => {
+      let sum = 0;
+      std.items.forEach((item) => {
+        const v = Math.round(item.maxPoints * 0.97);
+        presetItems[item.id] = v;
+        sum += v;
+      });
+      presetStd[std.key] = sum;
+    });
+    setItemScores(presetItems);
+    setScoreValues(presetStd);
     setBonus(1);
     setPenalty(0);
     setHasViolation(false);
@@ -110,6 +181,12 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const criteriaScoresOut: CriteriaScoreMap = {};
+    standards.forEach((std) => {
+      criteriaScoresOut[std.key] = isDetailedMode
+        ? getStandardTotal(std.key, std.items)
+        : scoreValues[std.key] || 0;
+    });
     onSave({
       periodId,
       targetType,
@@ -117,12 +194,8 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
       targetName,
       unitId,
       unitName,
-      criteriaScores: {
-        standard1: Number(s1),
-        standard2: Number(s2),
-        standard3: Number(s3),
-        standard4: Number(s4),
-      },
+      criteriaScores: criteriaScoresOut,
+      itemScores: isDetailedMode ? itemScores : undefined,
       bonusPoints: Number(bonus),
       penaltyPoints: Number(penalty),
       comments,
@@ -240,140 +313,131 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
                 className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-md hover:bg-emerald-100 transition font-medium flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                Điền mẫu đạt chuẩn (96 điểm)
+                Điền mẫu đạt chuẩn (~97%)
               </button>
             </div>
           )}
 
-          {/* 4 Tiêu chuẩn */}
+          {/* Tiêu chuẩn chấm điểm - đúng bộ tiêu chí theo loại đối tượng & vùng miền của xã/phường */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-1 flex-wrap gap-2">
               <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                Bảng điểm theo 4 tiêu chuẩn (Quy chuẩn 100 điểm)
+                Bảng điểm theo {standards.length} tiêu chuẩn (Quy chuẩn {totalMaxPoints} điểm)
               </h4>
-              <button
-                type="button"
-                onClick={() => setShowCriteriaDetail(!showCriteriaDetail)}
-                className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>{showCriteriaDetail ? 'Thu gọn tiêu chí' : 'Xem tiêu chí chi tiết'}</span>
-                {showCriteriaDetail ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleToggleDetailedMode}
+                  className="text-xs text-red-700 hover:text-red-900 font-semibold flex items-center gap-1 cursor-pointer"
+                  title={isDetailedMode ? 'Chuyển sang nhập nhanh tổng mỗi tiêu chuẩn' : 'Chuyển sang chấm chi tiết từng tiêu chí thành phần'}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{isDetailedMode ? 'Chấm chi tiết (đang bật)' : 'Chấm nhanh theo tổng'}</span>
+                </button>
+                {!isDetailedMode && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCriteriaDetail(!showCriteriaDetail)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>{showCriteriaDetail ? 'Thu gọn tiêu chí' : 'Xem tiêu chí chi tiết'}</span>
+                    {showCriteriaDetail ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                )}
+              </div>
             </div>
 
-            {showCriteriaDetail && (
+            {!isDetailedMode && showCriteriaDetail && (
               <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl space-y-2 text-xs">
                 <div className="font-bold text-blue-900 flex items-center gap-1.5">
                   <Info className="w-4 h-4 text-blue-600" />
-                  Danh mục tiêu chí thành phần đang áp dụng (NĐ 86/2023/NĐ-CP):
+                  Danh mục tiêu chí thành phần đang áp dụng ({regionType === 'mien_nui' ? 'Miền núi, DTTS' : 'Đồng bằng, đô thị'}):
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                  {criteria
-                    .filter((c) => c.targetType === 'all' || c.targetType === targetType)
-                    .map((c) => (
-                      <div key={c.id} className="p-2 bg-white rounded border border-blue-100 text-[11px]">
-                        <span className="font-mono font-bold text-blue-700 mr-1.5">[{c.code}]</span>
-                        <span className="font-semibold text-slate-800">{c.name}</span>
-                        <span className="ml-1 text-blue-600 font-bold">({c.maxPoints}đ)</span>
-                        {c.description && (
-                          <div className="text-slate-500 text-[10px] mt-0.5 line-clamp-1">
-                            {c.description}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                  {standards.flatMap((std) => std.items).map((c) => (
+                    <div key={c.id} className="p-2 bg-white rounded border border-blue-100 text-[11px]">
+                      <span className="font-mono font-bold text-blue-700 mr-1.5">[{c.code}]</span>
+                      <span className="font-semibold text-slate-800">{c.name}</span>
+                      <span className="ml-1 text-blue-600 font-bold">({c.maxPoints}đ)</span>
+                      {c.description && (
+                        <div className="text-slate-500 text-[10px] mt-0.5 line-clamp-1">
+                          {c.description}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Standard 1 */}
-            <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
-              <div className="flex justify-between items-start gap-4">
-                <div className="text-sm">
-                  <span className="font-semibold text-slate-800">Tiêu chuẩn 1:</span> Gương mẫu chấp hành chủ trương của Đảng, chính sách, pháp luật của Nhà nước; quy ước địa phương
-                  <span className="block text-xs text-slate-500 mt-0.5">(Tối đa: 30 điểm)</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <input
-                    type="number"
-                    min="0"
-                    max="30"
-                    disabled={readOnly}
-                    value={s1}
-                    onChange={(e) => setS1(Math.min(30, Math.max(0, Number(e.target.value))))}
-                    className="w-20 px-2.5 py-1.5 text-center font-bold text-slate-800 border border-slate-300 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white text-base disabled:bg-slate-100"
-                  />
-                  <span className="text-xs text-slate-500">/ 30đ</span>
-                </div>
-              </div>
-            </div>
+            {standards.map((std, idx) => {
+              const stdTotal = getStandardTotal(std.key, std.items);
+              return (
+                <div key={std.key} className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="text-sm">
+                      <span className="font-semibold text-slate-800">Tiêu chuẩn {idx + 1}:</span> {std.label}
+                      <span className="block text-xs text-slate-500 mt-0.5">(Tối đa: {std.maxPoints} điểm)</span>
+                    </div>
+                    {isDetailedMode ? (
+                      <div className="text-right shrink-0">
+                        <div className="text-lg font-extrabold text-slate-800">
+                          {stdTotal}<span className="text-xs font-normal text-slate-500">/{std.maxPoints}đ</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="number"
+                          min="0"
+                          max={std.maxPoints}
+                          disabled={readOnly}
+                          value={scoreValues[std.key] ?? 0}
+                          onChange={(e) => {
+                            const v = Math.min(std.maxPoints, Math.max(0, Number(e.target.value)));
+                            setScoreValues((prev) => ({ ...prev, [std.key]: v }));
+                          }}
+                          className="w-20 px-2.5 py-1.5 text-center font-bold text-slate-800 border border-slate-300 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white text-base disabled:bg-slate-100"
+                        />
+                        <span className="text-xs text-slate-500">/ {std.maxPoints}đ</span>
+                      </div>
+                    )}
+                  </div>
 
-            {/* Standard 2 */}
-            <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
-              <div className="flex justify-between items-start gap-4">
-                <div className="text-sm">
-                  <span className="font-semibold text-slate-800">Tiêu chuẩn 2:</span> Phát triển kinh tế, nỗ lực làm giàu chính đáng; tương trợ giúp đỡ nhau trong cộng đồng
-                  <span className="block text-xs text-slate-500 mt-0.5">(Tối đa: 30 điểm)</span>
+                  {isDetailedMode && (
+                    <div className="divide-y divide-slate-200/70 pt-1">
+                      {std.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-3 py-1.5 first:pt-0">
+                          <div className="text-xs text-slate-600 flex-1 pr-2">
+                            <span className="font-mono text-[10px] text-slate-400 mr-1">[{item.code}]</span>
+                            {item.name}
+                            {item.description && (
+                              <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{item.description}</div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.maxPoints}
+                              disabled={readOnly}
+                              value={itemScores[item.id] ?? 0}
+                              onChange={(e) => {
+                                const v = Math.min(item.maxPoints, Math.max(0, Number(e.target.value)));
+                                setItemScores((prev) => ({ ...prev, [item.id]: v }));
+                              }}
+                              className="w-16 px-2 py-1 text-center text-sm font-semibold text-slate-800 border border-slate-300 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white disabled:bg-slate-100"
+                            />
+                            <span className="text-[11px] text-slate-400">/{item.maxPoints}đ</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <input
-                    type="number"
-                    min="0"
-                    max="30"
-                    disabled={readOnly}
-                    value={s2}
-                    onChange={(e) => setS2(Math.min(30, Math.max(0, Number(e.target.value))))}
-                    className="w-20 px-2.5 py-1.5 text-center font-bold text-slate-800 border border-slate-300 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white text-base disabled:bg-slate-100"
-                  />
-                  <span className="text-xs text-slate-500">/ 30đ</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Standard 3 */}
-            <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
-              <div className="flex justify-between items-start gap-4">
-                <div className="text-sm">
-                  <span className="font-semibold text-slate-800">Tiêu chuẩn 3:</span> Xây dựng đời sống văn hóa, gia đình hòa thuận, tiến bộ, hạnh phúc, nghĩa tình
-                  <span className="block text-xs text-slate-500 mt-0.5">(Tối đa: 30 điểm)</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <input
-                    type="number"
-                    min="0"
-                    max="30"
-                    disabled={readOnly}
-                    value={s3}
-                    onChange={(e) => setS3(Math.min(30, Math.max(0, Number(e.target.value))))}
-                    className="w-20 px-2.5 py-1.5 text-center font-bold text-slate-800 border border-slate-300 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white text-base disabled:bg-slate-100"
-                  />
-                  <span className="text-xs text-slate-500">/ 30đ</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Standard 4 */}
-            <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
-              <div className="flex justify-between items-start gap-4">
-                <div className="text-sm">
-                  <span className="font-semibold text-slate-800">Tiêu chuẩn 4:</span> Bảo vệ môi trường, cảnh quan sáng - xanh - sạch - đẹp, đảm bảo an ninh trật tự
-                  <span className="block text-xs text-slate-500 mt-0.5">(Tối đa: 10 điểm)</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    disabled={readOnly}
-                    value={s4}
-                    onChange={(e) => setS4(Math.min(10, Math.max(0, Number(e.target.value))))}
-                    className="w-20 px-2.5 py-1.5 text-center font-bold text-slate-800 border border-slate-300 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white text-base disabled:bg-slate-100"
-                  />
-                  <span className="text-xs text-slate-500">/ 10đ</span>
-                </div>
-              </div>
-            </div>
+              );
+            })}
           </div>
 
           {/* Điểm cộng và Điểm trừ */}
@@ -416,7 +480,11 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
                     Nhấp để áp dụng điểm cộng & thêm vào nhận xét:
                   </div>
                   {bonusCategories
-                    .filter((b) => b.applicableTarget === 'all' || b.applicableTarget === targetType)
+                    .filter(
+                      (b) =>
+                        (b.applicableTarget === 'all' || b.applicableTarget === targetType) &&
+                        (!b.regionType || b.regionType === regionType)
+                    )
                     .map((item) => (
                       <button
                         key={item.id}
@@ -474,7 +542,11 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
                     Nhấp để áp dụng điểm trừ & thêm vào nhận xét:
                   </div>
                   {penaltyCategories
-                    .filter((p) => p.applicableTarget === 'all' || p.applicableTarget === targetType)
+                    .filter(
+                      (p) =>
+                        (p.applicableTarget === 'all' || p.applicableTarget === targetType) &&
+                        (!p.regionType || p.regionType === regionType)
+                    )
                     .map((item) => (
                       <button
                         key={item.id}

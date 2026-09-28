@@ -162,7 +162,7 @@ export const HouseholdsView: React.FC = () => {
           <div>
             <h2 className="text-lg font-bold text-slate-900">Danh mục Hộ Gia Đình</h2>
             <p className="text-xs text-slate-500">
-              Quản lý danh sách hộ gia đình, nhân khẩu, tộc họ trực thuộc để bình xét Gia đình văn hóa
+              Quản lý danh sách hộ gia đình, nhân khẩu và liên kết theo mã Thôn/Tổ để bình xét Gia đình văn hóa
             </p>
           </div>
         </div>

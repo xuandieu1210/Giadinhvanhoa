@@ -255,9 +255,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           <div className="font-extrabold text-white text-xs truncate">
             {selectedCommune.name}
           </div>
-          <div className="text-[10px] text-slate-400 truncate">
-            {selectedCommune.district}, {selectedCommune.province}
-          </div>
+          {selectedCommune.province && (
+            <div className="text-[10px] text-slate-400 truncate">
+              {selectedCommune.province}
+            </div>
+          )}
         </div>
       )}
 

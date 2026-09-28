@@ -24,9 +24,8 @@ export const CommunesView: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     code: '',
-    communeType: 'xa' as 'xa' | 'phuong' | 'thi_tran',
+    communeType: '1' as '1' | '2' | '3',
     regionType: 'dong_bang' as 'dong_bang' | 'mien_nui',
-    district: 'Huyện Hòa Vang',
     province: 'TP. Đà Nẵng',
     leaderName: '',
     phone: '',
@@ -39,9 +38,8 @@ export const CommunesView: React.FC = () => {
     setFormData({
       name: '',
       code: `xa-${Date.now().toString().slice(-4)}`,
-      communeType: 'xa',
+      communeType: '1',
       regionType: 'dong_bang',
-      district: 'Huyện Hòa Vang',
       province: 'TP. Đà Nẵng',
       leaderName: '',
       phone: '',
@@ -56,9 +54,8 @@ export const CommunesView: React.FC = () => {
     setFormData({
       name: c.name,
       code: c.code || '',
-      communeType: c.communeType || (c.name.toLowerCase().includes('phường') ? 'phuong' : 'xa'),
+      communeType: c.communeType || (c.name.toLowerCase().includes('phường') ? '2' : '1'),
       regionType: c.regionType || 'dong_bang',
-      district: c.district || 'Huyện Hòa Vang',
       province: c.province || 'TP. Đà Nẵng',
       leaderName: c.leaderName || '',
       phone: c.phone || '',
@@ -80,7 +77,6 @@ export const CommunesView: React.FC = () => {
       code: formData.code.trim() || `commune-${Date.now()}`,
       communeType: formData.communeType,
       regionType: formData.regionType,
-      district: formData.district.trim(),
       province: formData.province.trim(),
       leaderName: formData.leaderName.trim(),
       phone: formData.phone.trim(),
@@ -119,7 +115,7 @@ export const CommunesView: React.FC = () => {
               Quản lý Danh sách Xã / Phường (Đa địa bàn)
             </h2>
             <p className="text-xs text-slate-500">
-              Thêm mới, chỉnh sửa thông tin hành chính các Xã, Phường, Thị trấn trực thuộc trong hệ thống
+              Thêm mới, chỉnh sửa thông tin hành chính các Xã, Phường, Đặc khu trực thuộc trong hệ thống
             </p>
           </div>
         </div>
@@ -157,17 +153,17 @@ export const CommunesView: React.FC = () => {
                     <div className="flex items-center gap-2 mb-1">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                          c.communeType === 'phuong'
+                          c.communeType === '2'
                             ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                            : c.communeType === 'thi_tran'
+                            : c.communeType === '3'
                             ? 'bg-purple-100 text-purple-800 border border-purple-200'
                             : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                         }`}
                       >
-                        {c.communeType === 'phuong'
+                        {c.communeType === '2'
                           ? 'Phường'
-                          : c.communeType === 'thi_tran'
-                          ? 'Thị trấn'
+                          : c.communeType === '3'
+                          ? 'Đặc khu'
                           : 'Xã'}
                       </span>
                       <span
@@ -197,12 +193,12 @@ export const CommunesView: React.FC = () => {
                 </div>
 
                 <div className="text-xs text-slate-600 space-y-1.5 pt-2 border-t border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">
-                      {c.district}, {c.province}
-                    </span>
-                  </div>
+                  {c.province && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{c.province}</span>
+                    </div>
+                  )}
                   {c.leaderName && (
                     <div className="flex items-center gap-2">
                       <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -276,7 +272,7 @@ export const CommunesView: React.FC = () => {
           <div className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-6">
             <div className="bg-amber-800 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-bold">
-                {editingCommune ? 'Chỉnh sửa thông tin Xã / Phường' : 'Thêm Xã / Phường mới'}
+                {editingCommune ? 'Chỉnh sửa thông tin Xã / Phường / Đặc khu' : 'Thêm Xã / Phường / Đặc khu mới'}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -297,14 +293,14 @@ export const CommunesView: React.FC = () => {
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        communeType: e.target.value as 'xa' | 'phuong' | 'thi_tran',
+                        communeType: e.target.value as '1' | '2' | '3',
                       })
                     }
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden bg-white cursor-pointer font-medium"
                   >
-                    <option value="xa">Xã (Thuộc Huyện)</option>
-                    <option value="phuong">Phường (Thuộc Quận/Thành phố)</option>
-                    <option value="thi_tran">Thị trấn (Thuộc Huyện)</option>
+                    <option value="1">1 - Xã</option>
+                    <option value="2">2 - Phường</option>
+                    <option value="3">3 - Đặc khu</option>
                   </select>
                 </div>
                 <div>
@@ -329,7 +325,7 @@ export const CommunesView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tên Xã / Phường / Thị trấn *
+                  Tên Xã / Phường / Đặc khu *
                 </label>
                 <input
                   type="text"
@@ -341,33 +337,17 @@ export const CommunesView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Quận / Huyện *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.district}
-                    onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-                    placeholder="VD: Huyện Hòa Vang"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Tỉnh / Thành phố *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.province}
-                    onChange={(e) => setFormData({ ...formData, province: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-                    placeholder="VD: TP. Đà Nẵng"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Tỉnh / Thành phố
+                </label>
+                <input
+                  type="text"
+                  value={formData.province}
+                  onChange={(e) => setFormData({ ...formData, province: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                  placeholder="VD: TP. Đà Nẵng"
+                />
               </div>
 
               <div>

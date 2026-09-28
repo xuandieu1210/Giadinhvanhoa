@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AlertCircle, Check, Download, FileSpreadsheet, Upload, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useApp } from '../../context/AppContext';
 import { parseExcelFile } from '../../utils/excel';
 
 interface ImportExcelModalProps {
@@ -16,6 +17,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
   type,
   onImportSuccess,
 }) => {
+  const { units } = useApp();
   const [file, setFile] = useState<File | null>(null);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [error, setError] = useState<string>('');
@@ -57,10 +59,13 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
         {
           'Mã Tộc họ': 'TOC-HV',
           'Tên Tộc họ': 'Tộc Hoàng Văn',
-          'Thuộc Thôn/Tổ': 'Tổ dân phố 1 (Thôn 1)',
+          'Mã Thôn/Tổ': 'TDP-01',
           'Trưởng tộc': 'Hoàng Văn C',
           'Số điện thoại': '0912.333.444',
           'Số hộ trong tộc': 25,
+          'Trạng thái công nhận': 'Đã công nhận',
+          'Năm công nhận': new Date().getFullYear(),
+          'Số Quyết định công nhận': '118/QĐ-UBND',
           'Ghi chú': 'Dòng họ hiếu học',
         },
       ];
@@ -76,9 +81,8 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
           'Gia đình Đảng viên': 'Có',
           'Số Đảng viên': 1,
           'Địa chỉ': 'Số 102 Đường Lê Duẩn',
-          'Thôn/Tổ': 'Tổ dân phố 1 (Thôn 1)',
+          'Mã Thôn/Tổ': 'TDP-01',
           'Cụm dân cư': 'Cụm 1',
-          'Tộc họ': 'Tộc Trần Đình',
           'Số điện thoại': '0905.678.910',
           'Ghi chú': 'Gia đình chấp hành tốt',
         },
@@ -119,6 +123,22 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
     if (previewRows.length === 0) return;
 
     let mappedData: any[] = [];
+    const resolveUnitByCode = (row: any, rowIndex: number) => {
+      const rawUnitCode = String(
+        row['Mã Thôn/Tổ'] || row['Mã thôn/tổ'] || row['Mã Tổ'] || row['Mã Thôn'] || row['Mã đơn vị'] || ''
+      ).trim();
+
+      if (!rawUnitCode) {
+        throw new Error(`Dòng ${rowIndex + 1}: thiếu cột "Mã Thôn/Tổ" để liên kết dữ liệu.`);
+      }
+
+      const unit = units.find((item) => item.code.trim().toLowerCase() === rawUnitCode.toLowerCase());
+      if (!unit) {
+        throw new Error(`Dòng ${rowIndex + 1}: không tìm thấy Thôn/Tổ có mã "${rawUnitCode}".`);
+      }
+
+      return unit;
+    };
 
     if (type === 'unit') {
       mappedData = previewRows.map((r, i) => ({
@@ -131,39 +151,66 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
         notes: r['Ghi chú'] || '',
       }));
     } else if (type === 'clan') {
-      mappedData = previewRows.map((r, i) => ({
-        code: r['Mã Tộc họ'] || r['Mã'] || `TOC-NEW-${i + 1}`,
-        name: r['Tên Tộc họ'] || r['Tên'] || `Tộc họ ${i + 1}`,
-        unitId: 'unit-1', // Default
-        unitName: r['Thuộc Thôn/Tổ'] || r['Thôn/Tổ'] || 'Tổ dân phố 1 (Thôn 1)',
-        patriarchName: r['Trưởng tộc'] || 'Chưa cập nhật',
-        patriarchPhone: r['Số điện thoại'] || r['SĐT'] || '',
-        totalHouseholds: Number(r['Số hộ trong tộc']) || Number(r['Số hộ']) || 0,
-        notes: r['Ghi chú'] || '',
-      }));
+      try {
+        mappedData = previewRows.map((r, i) => {
+          const unit = resolveUnitByCode(r, i);
+          const rawRecognitionYear = Number(r['Năm công nhận'] || r['Năm CN'] || r['Năm']);
+          const decisionNumber = String(r['Số Quyết định công nhận'] || r['Số quyết định'] || r['Quyết định'] || '').trim();
+          const statusText = String(r['Trạng thái công nhận'] || r['Trạng thái'] || '').trim().toLowerCase();
+          const inferredStatus = statusText.includes('đã công nhận') || statusText.includes('dat chuan') || statusText.includes('đạt chuẩn')
+            ? 'dat_chuan'
+            : statusText.includes('thẩm tra')
+              ? 'dang_tham_tra'
+              : statusText.includes('chưa công nhận')
+                ? 'chua_cong_nhan'
+                : (rawRecognitionYear || decisionNumber ? 'dat_chuan' : 'chua_cong_nhan');
+
+          return {
+            code: r['Mã Tộc họ'] || r['Mã'] || `TOC-NEW-${i + 1}`,
+            name: r['Tên Tộc họ'] || r['Tên'] || `Tộc họ ${i + 1}`,
+            unitId: unit.id,
+            unitName: unit.name,
+            patriarchName: r['Trưởng tộc'] || 'Chưa cập nhật',
+            patriarchPhone: r['Số điện thoại'] || r['SĐT'] || '',
+            totalHouseholds: Number(r['Số hộ trong tộc']) || Number(r['Số hộ']) || 0,
+            culturalStatus: inferredStatus,
+            recognitionYear: Number.isFinite(rawRecognitionYear) && rawRecognitionYear > 0 ? rawRecognitionYear : undefined,
+            decisionNumber: decisionNumber || undefined,
+            notes: r['Ghi chú'] || '',
+          };
+        });
+      } catch (err: any) {
+        setError(err.message || 'Không thể liên kết tộc họ với Thôn/Tổ theo mã.');
+        return;
+      }
     } else {
-      mappedData = previewRows.map((r, i) => {
-        const isParty =
-          String(r['Gia đình Đảng viên'] || r['Đảng viên'] || '').toLowerCase().includes('có') ||
-          String(r['Gia đình Đảng viên'] || '').trim().toLowerCase() === 'x' ||
-          Number(r['Số Đảng viên']) > 0;
-        return {
-          code: r['Mã hộ'] || `HGĐ-NEW-${i + 1}`,
-          headName: r['Chủ hộ'] || r['Họ và tên'] || `Hộ mới ${i + 1}`,
-          gender: r['Giới tính'] === 'Nữ' ? 'Nữ' : 'Nam',
-          birthYear: Number(r['Năm sinh']) || undefined,
-          memberCount: Number(r['Số nhân khẩu']) || 4,
-          isPartyMemberFamily: isParty,
-          partyMemberCount: isParty ? (Number(r['Số Đảng viên']) || 1) : 0,
-          address: r['Địa chỉ'] || 'Chưa cập nhật',
-          unitId: 'unit-1',
-          unitName: r['Thôn/Tổ'] || 'Tổ dân phố 1 (Thôn 1)',
-          residentialCluster: r['Cụm dân cư'] || r['Cụm'] || 'Cụm 1',
-          clanName: r['Tộc họ'] || undefined,
-          phone: r['Số điện thoại'] || r['SĐT'] || '',
-          notes: r['Ghi chú'] || '',
-        };
-      });
+      try {
+        mappedData = previewRows.map((r, i) => {
+          const unit = resolveUnitByCode(r, i);
+          const isParty =
+            String(r['Gia đình Đảng viên'] || r['Đảng viên'] || '').toLowerCase().includes('có') ||
+            String(r['Gia đình Đảng viên'] || '').trim().toLowerCase() === 'x' ||
+            Number(r['Số Đảng viên']) > 0;
+          return {
+            code: r['Mã hộ'] || `HGĐ-NEW-${i + 1}`,
+            headName: r['Chủ hộ'] || r['Họ và tên'] || `Hộ mới ${i + 1}`,
+            gender: r['Giới tính'] === 'Nữ' ? 'Nữ' : 'Nam',
+            birthYear: Number(r['Năm sinh']) || undefined,
+            memberCount: Number(r['Số nhân khẩu']) || 4,
+            isPartyMemberFamily: isParty,
+            partyMemberCount: isParty ? (Number(r['Số Đảng viên']) || 1) : 0,
+            address: r['Địa chỉ'] || 'Chưa cập nhật',
+            unitId: unit.id,
+            unitName: unit.name,
+            residentialCluster: r['Cụm dân cư'] || r['Cụm'] || 'Cụm 1',
+            phone: r['Số điện thoại'] || r['SĐT'] || '',
+            notes: r['Ghi chú'] || '',
+          };
+        });
+      } catch (err: any) {
+        setError(err.message || 'Không thể liên kết hộ gia đình với Thôn/Tổ theo mã.');
+        return;
+      }
     }
 
     onImportSuccess(mappedData);

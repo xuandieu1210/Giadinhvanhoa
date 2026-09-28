@@ -82,6 +82,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStandard, setFilterStandard] = useState<string>('all');
   const [filterTarget, setFilterTarget] = useState<string>('all');
+  const [filterRegion, setFilterRegion] = useState<string>('all');
 
   // Modal states
   const [isCriterionModalOpen, setIsCriterionModalOpen] = useState(false);
@@ -123,6 +124,11 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
       maxPoints: 10,
       badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
     },
+    standard5: {
+      title: 'Tiêu chuẩn 5: Đoàn kết, tương trợ trong cộng đồng',
+      maxPoints: 10,
+      badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    },
   };
 
   // --- Handlers for Criteria ---
@@ -143,6 +149,8 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     const targetType = formData.get('targetType') as 'all' | 'household' | 'unit' | 'clan';
     const description = (formData.get('description') as string).trim();
     const order = Number(formData.get('order')) || 1;
+    const regionTypeRaw = formData.get('regionType') as string;
+    const regionType = regionTypeRaw === 'dong_bang' || regionTypeRaw === 'mien_nui' ? regionTypeRaw : undefined;
 
     if (!code || !name) {
       alert('Vui lòng nhập đầy đủ mã và tên tiêu chí!');
@@ -158,6 +166,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
         targetType,
         description,
         order,
+        regionType,
       });
     } else {
       addCriterion({
@@ -168,6 +177,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
         targetType,
         description,
         order,
+        regionType,
       });
     }
 
@@ -191,6 +201,8 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     const applicableTarget = formData.get('applicableTarget') as 'all' | 'household' | 'unit' | 'clan';
     const categoryGroup = (formData.get('categoryGroup') as string).trim();
     const description = (formData.get('description') as string).trim();
+    const regionTypeRaw = formData.get('regionType') as string;
+    const regionType = regionTypeRaw === 'dong_bang' || regionTypeRaw === 'mien_nui' ? regionTypeRaw : undefined;
 
     if (!code || !title) {
       alert('Vui lòng nhập đầy đủ mã và tên mục điểm cộng!');
@@ -205,6 +217,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
         applicableTarget,
         categoryGroup,
         description,
+        regionType,
       });
     } else {
       addBonusCategory({
@@ -214,6 +227,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
         applicableTarget,
         categoryGroup,
         description,
+        regionType,
       });
     }
 
@@ -238,6 +252,8 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     const categoryGroup = (formData.get('categoryGroup') as string).trim();
     const severity = formData.get('severity') as 'Nhẹ' | 'Nghiêm trọng' | 'Rất nghiêm trọng';
     const description = (formData.get('description') as string).trim();
+    const regionTypeRaw = formData.get('regionType') as string;
+    const regionType = regionTypeRaw === 'dong_bang' || regionTypeRaw === 'mien_nui' ? regionTypeRaw : undefined;
 
     if (!code || !title) {
       alert('Vui lòng nhập đầy đủ mã và hành vi vi phạm!');
@@ -253,6 +269,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
         categoryGroup,
         severity,
         description,
+        regionType,
       });
     } else {
       addPenaltyCategory({
@@ -263,6 +280,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
         categoryGroup,
         severity,
         description,
+        regionType,
       });
     }
 
@@ -363,6 +381,9 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
   };
 
   // Filtered lists
+  const matchRegion = (regionType?: 'dong_bang' | 'mien_nui') =>
+    filterRegion === 'all' || !regionType || regionType === filterRegion;
+
   const filteredCriteria = criteria.filter((c) => {
     const matchSearch =
       c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -370,7 +391,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
       c.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStandard = filterStandard === 'all' || c.standardKey === filterStandard;
     const matchTarget = filterTarget === 'all' || c.targetType === 'all' || c.targetType === filterTarget;
-    return matchSearch && matchStandard && matchTarget;
+    return matchSearch && matchStandard && matchTarget && matchRegion(c.regionType);
   });
 
   const filteredBonus = bonusCategories.filter((b) => {
@@ -379,7 +400,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
       b.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.categoryGroup.toLowerCase().includes(searchTerm.toLowerCase());
     const matchTarget = filterTarget === 'all' || b.applicableTarget === 'all' || b.applicableTarget === filterTarget;
-    return matchSearch && matchTarget;
+    return matchSearch && matchTarget && matchRegion(b.regionType);
   });
 
   const filteredPenalty = penaltyCategories.filter((p) => {
@@ -388,7 +409,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
       p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.categoryGroup.toLowerCase().includes(searchTerm.toLowerCase());
     const matchTarget = filterTarget === 'all' || p.applicableTarget === 'all' || p.applicableTarget === filterTarget;
-    return matchSearch && matchTarget;
+    return matchSearch && matchTarget && matchRegion(p.regionType);
   });
 
   const filteredTitles = titleCategories.filter((t) => {
@@ -407,6 +428,28 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
       h.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
   });
+
+  const getRegionBadge = (regionType?: 'dong_bang' | 'mien_nui') => {
+    if (regionType === 'mien_nui') {
+      return (
+        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-50 text-teal-700 border border-teal-200">
+          Miền núi, DTTS
+        </span>
+      );
+    }
+    if (regionType === 'dong_bang') {
+      return (
+        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
+          Đồng bằng, đô thị
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-300">
+        Áp dụng chung
+      </span>
+    );
+  };
 
   const getTargetBadge = (target: string) => {
     switch (target) {
@@ -747,6 +790,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
               <option value="standard2">TC 2: Kinh tế, làm giàu (30đ)</option>
               <option value="standard3">TC 3: Nếp sống văn hóa (30đ)</option>
               <option value="standard4">TC 4: Môi trường, an ninh (10đ)</option>
+              <option value="standard5">TC 5: Đoàn kết, tương trợ (10đ)</option>
             </select>
           )}
 
@@ -763,6 +807,18 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
             </select>
           )}
 
+          {(activeSubTab === 'criteria' || activeSubTab === 'bonus' || activeSubTab === 'penalty') && (
+            <select
+              value={filterRegion}
+              onChange={(e) => setFilterRegion(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+            >
+              <option value="all">Tất cả vùng miền</option>
+              <option value="dong_bang">Đồng bằng, đô thị</option>
+              <option value="mien_nui">Miền núi, DTTS</option>
+            </select>
+          )}
+
           <div className="text-xs text-slate-400 font-medium ml-auto">
             Hiển thị kết quả phù hợp
           </div>
@@ -776,6 +832,8 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
             <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold">Khung tiêu chuẩn theo Nghị định 86/2023/NĐ-CP:</span> Tổng điểm chuẩn tối đa là <strong>100 điểm</strong> chia đều cho 4 tiêu chuẩn chính (TC1: 30đ, TC2: 30đ, TC3: 30đ, TC4: 10đ). Ngưỡng công nhận đạt chuẩn tối thiểu là <strong>≥ 90 điểm</strong>.
+              <br />
+              <span className="font-bold">Riêng khu vực miền núi, vùng đồng bào dân tộc thiểu số:</span> Bộ tiêu chí áp dụng theo 3 tiêu chuẩn (TC1: 40đ, TC2: 35đ, TC3: 25đ) – lọc theo bộ lọc “Miền núi, DTTS” ở trên để xem chi tiết từng mục đã được nhập.
             </div>
           </div>
 
@@ -790,13 +848,14 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                     <th className="py-3 px-4">Tên tiêu chí & Nội dung đánh giá</th>
                     <th className="py-3 px-4 w-28 text-center">Điểm tối đa</th>
                     <th className="py-3 px-4 w-32 text-center">Áp dụng</th>
+                    <th className="py-3 px-4 w-32 text-center">Vùng miền</th>
                     {isAdminOrXa && <th className="py-3 px-4 w-24 text-center">Thao tác</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredCriteria.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-slate-400">
+                      <td colSpan={8} className="text-center py-8 text-slate-400">
                         Không tìm thấy tiêu chí nào phù hợp.
                       </td>
                     </tr>
@@ -838,6 +897,9 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-center">
                             {getTargetBadge(item.targetType)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {getRegionBadge(item.regionType)}
                           </td>
                           {isAdminOrXa && (
                             <td className="py-3 px-4 text-center">
@@ -914,7 +976,10 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <div>{getTargetBadge(b.applicableTarget)}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {getTargetBadge(b.applicableTarget)}
+                    {getRegionBadge(b.regionType)}
+                  </div>
                   {isAdminOrXa && (
                     <div className="flex items-center gap-1">
                       <button
@@ -997,7 +1062,10 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <div>{getTargetBadge(p.applicableTarget)}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {getTargetBadge(p.applicableTarget)}
+                      {getRegionBadge(p.regionType)}
+                    </div>
                     {isAdminOrXa && (
                       <div className="flex items-center gap-1">
                         <button
@@ -1226,6 +1294,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                     <option value="standard2">Tiêu chuẩn 2 (Max 30đ)</option>
                     <option value="standard3">Tiêu chuẩn 3 (Max 30đ)</option>
                     <option value="standard4">Tiêu chuẩn 4 (Max 10đ)</option>
+                    <option value="standard5">Tiêu chuẩn 5 (Max 10đ)</option>
                   </select>
                 </div>
 
@@ -1302,6 +1371,21 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white focus:ring-2 focus:ring-red-500/20"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Vùng áp dụng
+                </label>
+                <select
+                  name="regionType"
+                  defaultValue={editingCriterion?.regionType || ''}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white focus:ring-2 focus:ring-red-500/20"
+                >
+                  <option value="">Áp dụng chung mọi vùng</option>
+                  <option value="dong_bang">Đồng bằng, đô thị</option>
+                  <option value="mien_nui">Miền núi, vùng DTTS</option>
+                </select>
               </div>
 
               <div>
@@ -1428,6 +1512,21 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                     <option value="clan">Dòng họ</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Vùng áp dụng
+                </label>
+                <select
+                  name="regionType"
+                  defaultValue={editingBonus?.regionType || ''}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white"
+                >
+                  <option value="">Áp dụng chung mọi vùng</option>
+                  <option value="dong_bang">Đồng bằng, đô thị</option>
+                  <option value="mien_nui">Miền núi, vùng DTTS</option>
+                </select>
               </div>
 
               <div>
@@ -1566,6 +1665,21 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                     <option value="clan">Dòng họ</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Vùng áp dụng
+                </label>
+                <select
+                  name="regionType"
+                  defaultValue={editingPenalty?.regionType || ''}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white"
+                >
+                  <option value="">Áp dụng chung mọi vùng</option>
+                  <option value="dong_bang">Đồng bằng, đô thị</option>
+                  <option value="mien_nui">Miền núi, vùng DTTS</option>
+                </select>
               </div>
 
               <div>

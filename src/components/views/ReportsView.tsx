@@ -893,7 +893,7 @@ export const ReportsView: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-50/50 p-4 rounded-xl border border-emerald-200">
               <div>
                 <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wide">
-                  Báo cáo tổng hợp danh sách gia đình văn hóa toàn {selectedCommune?.communeType === 'phuong' ? 'phường' : 'xã'} {selectedCommune?.name || ''}
+                  Báo cáo tổng hợp danh sách gia đình văn hóa toàn {selectedCommune?.communeType === '2' ? 'phường' : selectedCommune?.communeType === '3' ? 'đặc khu' : 'xã'} {selectedCommune?.name || ''}
                 </h4>
                 <p className="text-[11px] text-emerald-700 mt-0.5">
                   Thống kê kết quả bình xét Gia đình văn hóa chi tiết theo từng Thôn / Tổ dân phố (Đợt: {currentPeriod?.name || ''} - Năm {currentPeriod?.year})

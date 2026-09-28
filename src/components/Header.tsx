@@ -8,7 +8,6 @@ import {
   LogOut,
   MapPin,
   Menu,
-  RefreshCw,
   Shield,
   UserCheck,
 } from 'lucide-react';
@@ -33,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
     selectedCommune,
     terms,
     currentUser,
+    users,
     switchUser,
     logout,
     periods,
@@ -40,7 +40,6 @@ export const Header: React.FC<HeaderProps> = ({
     setSelectedPeriodId,
     selectedPeriod,
     isPeriodExpired,
-    resetAllData,
   } = useApp();
 
   const expired = isPeriodExpired(selectedPeriod);
@@ -59,6 +58,11 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const roleInfo = getRoleBadge(currentUser?.role);
+  const communeOfficerUser = users.find((user) => user.role === 'can_bo_xa' && user.communeId === selectedCommuneId)
+    || users.find((user) => user.role === 'can_bo_xa');
+  const unitLeaderUsers = users.filter((user) => user.role === 'to_truong' && user.communeId === selectedCommuneId);
+  const firstUnitLeader = unitLeaderUsers[0];
+  const secondUnitLeader = unitLeaderUsers[1];
 
   const getTabTitle = (tab: TabKey) => {
     switch (tab) {
@@ -98,13 +102,10 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="w-4 h-4 rounded-full bg-amber-400 text-red-900 flex items-center justify-center font-black text-[10px] shadow-xs">
             ★
           </div>
-          <span className="font-bold tracking-wide uppercase text-[11px]">
-            CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM — Độc lập - Tự do - Hạnh phúc
-          </span>
         </div>
         <div className="flex items-center gap-4 text-red-100">
           <span className="hidden xl:inline text-[11px] text-amber-200/90 font-medium">
-            Hệ thống Quản lý & Bình xét Văn hóa Đa xã/phường (NĐ 86/2023/NĐ-CP)
+            Hệ thống Quản lý & Bình xét Văn hóa Đa xã/phường
           </span>
           <button
             type="button"
@@ -168,7 +169,7 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {communes.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({c.district})
+                    {c.name}
                   </option>
                 ))}
               </select>
@@ -287,22 +288,24 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => switchUser(terms.isWard ? 'phuong' : 'xa')}
+            onClick={() => communeOfficerUser && switchUser(communeOfficerUser.username)}
+            disabled={!communeOfficerUser}
             className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.username === 'xa' || currentUser?.username === 'phuong'
+              currentUser?.id === communeOfficerUser?.id
                 ? 'bg-blue-700 text-white border-blue-800 shadow-xs'
-                : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50'
+                : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed'
             }`}
           >
             {terms.communeOfficer}
           </button>
           <button
             type="button"
-            onClick={() => switchUser(terms.isWard ? 'top1' : 'to1')}
+            onClick={() => firstUnitLeader && switchUser(firstUnitLeader.username)}
+            disabled={!firstUnitLeader}
             className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.username === 'to1' || currentUser?.username === 'top1'
+              currentUser?.id === firstUnitLeader?.id
                 ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50'
+                : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed'
             }`}
           >
             {terms.unitLeader} 1
@@ -310,30 +313,17 @@ export const Header: React.FC<HeaderProps> = ({
           {!terms.isWard && (
             <button
               type="button"
-              onClick={() => switchUser('to2')}
+              onClick={() => secondUnitLeader && switchUser(secondUnitLeader.username)}
+              disabled={!secondUnitLeader}
               className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-                currentUser?.username === 'to2'
+                currentUser?.id === secondUnitLeader?.id
                   ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                  : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50'
+                  : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed'
               }`}
             >
               {terms.unitLeader} 2
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Khôi phục toàn bộ dữ liệu mẫu ban đầu?')) {
-                resetAllData();
-              }
-            }}
-            title="Khôi phục dữ liệu mẫu ban đầu"
-            className="ml-2 px-2 py-0.5 text-slate-500 hover:text-slate-800 text-[11px] flex items-center gap-1 hover:underline cursor-pointer"
-          >
-            <RefreshCw className="w-3 h-3" />
-            <span>Khôi phục mẫu</span>
-          </button>
         </div>
       </div>
     </header>

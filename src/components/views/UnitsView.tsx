@@ -7,6 +7,7 @@ import { ImportExcelModal } from '../modals/ImportExcelModal';
 
 export const UnitsView: React.FC = () => {
   const {
+    communes,
     units,
     addUnit,
     updateUnit,
@@ -26,6 +27,7 @@ export const UnitsView: React.FC = () => {
 
   // Form states
   const [formData, setFormData] = useState({
+    communeId: selectedCommune?.id || '',
     code: '',
     name: '',
     leaderName: '',
@@ -45,6 +47,7 @@ export const UnitsView: React.FC = () => {
   const openCreateModal = () => {
     setEditingUnit(null);
     setFormData({
+      communeId: selectedCommune?.id || '',
       code: `${terms.isWard ? 'TDP' : 'THON'}-0${units.length + 1}`,
       name: `${terms.unitLabel} ${units.length + 1}`,
       leaderName: '',
@@ -59,6 +62,7 @@ export const UnitsView: React.FC = () => {
   const openEditModal = (unit: Unit) => {
     setEditingUnit(unit);
     setFormData({
+      communeId: unit.communeId,
       code: unit.code,
       name: unit.name,
       leaderName: unit.leaderName,
@@ -77,10 +81,22 @@ export const UnitsView: React.FC = () => {
       return;
     }
 
+    if (!formData.communeId) {
+      alert('Vui lòng chọn xã/phường/đặc khu cho đơn vị này!');
+      return;
+    }
+
+    const targetCommune = communes.find((commune) => commune.id === formData.communeId);
+    const payload = {
+      ...formData,
+      communeId: formData.communeId,
+      communeName: targetCommune?.name || '',
+    };
+
     if (editingUnit) {
-      updateUnit(editingUnit.id, formData);
+      updateUnit(editingUnit.id, payload);
     } else {
-      addUnit(formData);
+      addUnit(payload);
     }
     setIsModalOpen(false);
   };
@@ -263,6 +279,25 @@ export const UnitsView: React.FC = () => {
               </button>
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Xã / Phường / Đặc khu *
+                </label>
+                <select
+                  value={formData.communeId}
+                  onChange={(e) => setFormData({ ...formData, communeId: e.target.value })}
+                  disabled={currentUser?.role === 'can_bo_xa'}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-hidden bg-white disabled:bg-slate-100 disabled:cursor-not-allowed"
+                >
+                  <option value="">Chọn xã/phường/đặc khu</option>
+                  {communes.map((commune) => (
+                    <option key={commune.id} value={commune.id}>
+                      {commune.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">

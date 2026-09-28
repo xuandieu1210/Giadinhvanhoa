@@ -4,10 +4,10 @@ export interface Commune {
   id: string;
   code: string;
   name: string; // VD: Xã Hòa Khương, Xã Hòa Tiến, Phường Thạch Thang
-  communeType?: 'xa' | 'phuong' | 'thi_tran'; // Phân định rõ Xã hay Phường
+  communeType?: '1' | '2' | '3'; // 1 = Xã, 2 = Phường, 3 = Đặc khu
   regionType?: 'dong_bang' | 'mien_nui'; // Vùng: Đồng bằng hay Miền núi
-  district: string; // Huyện Hòa Vang, Quận Hải Châu...
-  province: string; // TP. Đà Nẵng...
+  district?: string; // Huyện Hòa Vang, Quận Hải Châu... (không bắt buộc hiển thị/nhập)
+  province?: string; // TP. Đà Nẵng...
   phone?: string;
   email?: string;
   leaderName?: string; // Chủ tịch / PCT UBND
@@ -134,6 +134,10 @@ export interface UnitPeriodProgress {
   notes?: string;
 }
 
+export type StandardKey = 'standard1' | 'standard2' | 'standard3' | 'standard4' | 'standard5';
+// Số lượng tiêu chuẩn & điểm tối đa mỗi tiêu chuẩn thay đổi theo targetType + regionType (xem AppContext.getScoringStandards)
+export type CriteriaScoreMap = Partial<Record<StandardKey, number>>;
+
 export interface EvaluationScoreItem {
   id: string;
   periodId: string;
@@ -143,13 +147,9 @@ export interface EvaluationScoreItem {
   unitId: string;
   unitName: string;
   
-  // Điểm các tiêu chuẩn chính
-  criteriaScores: {
-    standard1: number; // Gương mẫu chấp hành chủ trương, pháp luật (max 30)
-    standard2: number; // Phát triển kinh tế, nỗ lực làm giàu (max 30)
-    standard3: number; // Nếp sống văn hóa, gia đình hòa thuận (max 30)
-    standard4: number; // Môi trường, cảnh quan, an ninh trật tự (max 10)
-  };
+  // Điểm các tiêu chuẩn chính (số lượng & điểm tối đa mỗi tiêu chuẩn phụ thuộc loại đối tượng & vùng miền)
+  criteriaScores: CriteriaScoreMap;
+  itemScores?: Record<string, number>; // Điểm chấm chi tiết từng tiêu chí thành phần (key = CriterionItem.id)
   bonusPoints: number; // Điểm cộng (VD: Thành tích xuất sắc, khen thưởng)
   penaltyPoints: number; // Điểm trừ (VD: Vi phạm quy ước, vi phạm hành chính)
   
@@ -176,13 +176,14 @@ export interface EvaluationScoreItem {
 // 1. Danh mục Tiêu chí / Tiêu chuẩn thành phần
 export interface CriterionItem {
   id: string;
-  standardKey: 'standard1' | 'standard2' | 'standard3' | 'standard4';
+  standardKey: StandardKey;
   code: string; // VD: TC1.1, TC2.1
   name: string; // Tên tiêu chí
   maxPoints: number; // Điểm tối đa
   targetType: 'all' | 'household' | 'unit' | 'clan';
   description: string;
   order: number;
+  regionType?: 'dong_bang' | 'mien_nui'; // Vùng áp dụng riêng (bỏ trống = áp dụng chung mọi vùng)
 }
 
 // 2. Danh mục Điểm cộng / Khen thưởng
@@ -194,6 +195,7 @@ export interface BonusCategory {
   applicableTarget: 'all' | 'household' | 'unit' | 'clan';
   categoryGroup: string; // 'Chính sách xã hội', 'Thành tích đột xuất', 'Hiến đất / Xã hội hóa', 'Khuyến học'...
   description: string;
+  regionType?: 'dong_bang' | 'mien_nui'; // Vùng áp dụng riêng (bỏ trống = áp dụng chung mọi vùng)
 }
 
 // 3. Danh mục Điểm trừ / Vi phạm
@@ -206,6 +208,7 @@ export interface PenaltyCategory {
   categoryGroup: string; // 'Trật tự an toàn giao thông', 'Môi trường & Vệ sinh', 'Quy ước thôn tổ', 'Trật tự xã hội'
   severity: 'Nhẹ' | 'Nghiêm trọng' | 'Rất nghiêm trọng';
   description: string;
+  regionType?: 'dong_bang' | 'mien_nui'; // Vùng áp dụng riêng (bỏ trống = áp dụng chung mọi vùng)
 }
 
 // 4. Danh mục Danh hiệu Văn hóa & Thi đua

@@ -1,27 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getAdministrativeTerms, AdministrativeTerms } from '../utils/administrativeTerms';
 import {
-  INITIAL_CLANS,
-  INITIAL_COMMUNES,
-  INITIAL_HOUSEHOLDS,
-  INITIAL_PERIODS,
-  INITIAL_PROGRESS,
-  INITIAL_SCORES,
-  INITIAL_UNITS,
-  INITIAL_USERS,
-} from '../data/mockData';
-import {
-  INITIAL_BONUS_CATEGORIES,
-  INITIAL_CRITERIA,
-  INITIAL_HOUSEHOLD_TYPES,
-  INITIAL_PENALTY_CATEGORIES,
-  INITIAL_TITLE_CATEGORIES,
-} from '../data/categoryData';
-import {
   BonusCategory,
   Clan,
   ClanCulturalStatus,
   Commune,
+  CriteriaScoreMap,
   CriterionItem,
   EvaluationPeriod,
   EvaluationScoreItem,
@@ -29,12 +13,59 @@ import {
   Household,
   HouseholdTypeCategory,
   PenaltyCategory,
+  StandardKey,
   TitleCategory,
   Unit,
   UnitPeriodProgress,
   UnitSubmissionStatus,
   User,
 } from '../types';
+
+type DataTableName =
+  | 'communes'
+  | 'users'
+  | 'units'
+  | 'clans'
+  | 'households'
+  | 'periods'
+  | 'progress'
+  | 'scores'
+  | 'criteria'
+  | 'bonusCategories'
+  | 'penaltyCategories'
+  | 'titleCategories'
+  | 'householdTypes';
+
+interface AppDataPayload {
+  communes?: Commune[];
+  users?: User[];
+  units?: Unit[];
+  clans?: Clan[];
+  households?: Household[];
+  periods?: EvaluationPeriod[];
+  progress?: (UnitPeriodProgress & { id?: string })[];
+  scores?: EvaluationScoreItem[];
+  criteria?: CriterionItem[];
+  bonusCategories?: BonusCategory[];
+  penaltyCategories?: PenaltyCategory[];
+  titleCategories?: TitleCategory[];
+  householdTypes?: HouseholdTypeCategory[];
+}
+
+const saveTableToDatabase = async (tableName: DataTableName, rows: unknown[]) => {
+  const response = await fetch(`/api/data/${tableName}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rows),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Không thể lưu bảng ${tableName} vào cơ sở dữ liệu.`);
+  }
+};
+
+const stripProgressIds = (rows: (UnitPeriodProgress & { id?: string })[]): UnitPeriodProgress[] =>
+  rows.map(({ id, ...row }) => row);
 
 export interface SaveScoreInput {
   id?: string;
@@ -44,12 +75,8 @@ export interface SaveScoreInput {
   targetName: string;
   unitId: string;
   unitName: string;
-  criteriaScores: {
-    standard1: number;
-    standard2: number;
-    standard3: number;
-    standard4: number;
-  };
+  criteriaScores: CriteriaScoreMap;
+  itemScores?: Record<string, number>;
   bonusPoints: number;
   penaltyPoints: number;
   comments?: string;
@@ -64,6 +91,92 @@ export interface SaveScoreInput {
   returnReason?: string;
   evaluatedByLevel?: 'to' | 'xa';
 }
+
+export interface ScoringStandardDef {
+  key: StandardKey;
+  label: string; // Tên nhóm tiêu chuẩn ngắn gọn để hiển thị trên phiếu chấm
+  maxPoints: number; // Tổng điểm tối đa của nhóm (cộng dồn từ các tiêu chí con trong danh mục)
+  items: CriterionItem[]; // Các tiêu chí con thuộc nhóm này (để hiển thị gợi ý/hướng dẫn chấm)
+}
+
+// Tên nhóm tiêu chuẩn hiển thị theo loại đối tượng (giống nhau giữa các vùng miền)
+const STANDARD_LABELS: Record<'household' | 'unit' | 'clan', Partial<Record<StandardKey, string>>> = {
+  household: {
+    standard1: 'Gương mẫu chấp hành pháp luật',
+    standard2: 'Tích cực tham gia phong trào',
+    standard3: 'Gia đình no ấm, hạnh phúc',
+    standard4: 'Môi trường, an ninh trật tự',
+  },
+  unit: {
+    standard1: 'Đời sống kinh tế ổn định',
+    standard2: 'Đời sống văn hóa, tinh thần',
+    standard3: 'Môi trường an toàn, sạch đẹp',
+    standard4: 'Chấp hành pháp luật, ANTT',
+    standard5: 'Đoàn kết, tương trợ cộng đồng',
+  },
+  clan: {
+    standard1: 'Tiêu chuẩn 1',
+    standard2: 'Tiêu chuẩn 2',
+    standard3: 'Tiêu chuẩn 3',
+    standard4: 'Tiêu chuẩn 4',
+  },
+};
+
+const sumStandardMaxPoints = (standards: ScoringStandardDef[]) =>
+  standards.reduce((sum, standard) => sum + standard.maxPoints, 0);
+
+const distributeExactStandardScore = (standards: ScoringStandardDef[], targetScore: number): CriteriaScoreMap => {
+  const totalMaxPoints = sumStandardMaxPoints(standards);
+  const cappedTarget = Math.max(0, Math.min(totalMaxPoints, Math.round(targetScore)));
+
+  if (totalMaxPoints <= 0 || standards.length === 0) {
+    return {};
+  }
+
+  const weightedParts = standards.map((standard) => {
+    const exact = (standard.maxPoints * cappedTarget) / totalMaxPoints;
+    const base = Math.floor(exact);
+    return {
+      standard,
+      base,
+      remainder: exact - base,
+    };
+  });
+
+  let remaining = cappedTarget - weightedParts.reduce((sum, part) => sum + part.base, 0);
+  const result: CriteriaScoreMap = {};
+
+  weightedParts
+    .sort((a, b) => b.remainder - a.remainder)
+    .forEach((part) => {
+      const canAdd = remaining > 0 && part.base < part.standard.maxPoints;
+      result[part.standard.key] = part.base + (canAdd ? 1 : 0);
+      if (canAdd) remaining -= 1;
+    });
+
+  return result;
+};
+
+const distributeRatioStandardScore = (standards: ScoringStandardDef[], ratio: number): CriteriaScoreMap => {
+  const totalMaxPoints = sumStandardMaxPoints(standards);
+  return distributeExactStandardScore(standards, totalMaxPoints * ratio);
+};
+
+const normalizeCommuneType = (communeType?: string): Commune['communeType'] => {
+  if (communeType === 'xa') return '1';
+  if (communeType === 'phuong') return '2';
+  if (communeType === 'thi_tran') return '3';
+  if (communeType === '1' || communeType === '2' || communeType === '3') return communeType;
+  return '1';
+};
+
+const resolveCommuneMeta = (communes: Commune[], communeId?: string) => {
+  const commune = communes.find((item) => item.id === communeId);
+  return {
+    communeId: commune?.id || '',
+    communeName: commune?.name || '',
+  };
+};
 
 interface AppContextType {
   // Commune selection & multi-tenant
@@ -97,6 +210,12 @@ interface AppContextType {
   penaltyCategories: PenaltyCategory[];
   titleCategories: TitleCategory[];
   householdTypes: HouseholdTypeCategory[];
+
+  // Lấy bộ tiêu chuẩn chấm điểm (nhóm + điểm tối đa) đúng theo loại đối tượng & vùng miền
+  getScoringStandards: (
+    targetType: 'household' | 'unit' | 'clan',
+    regionType?: 'dong_bang' | 'mien_nui'
+  ) => ScoringStandardDef[];
 
   // Master Data Methods
   addCriterion: (item: Omit<CriterionItem, 'id'>) => void;
@@ -221,182 +340,125 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEYS = {
-  COMMUNES: 'bxvh_communes',
-  SELECTED_COMMUNE: 'bxvh_selected_commune',
-  CURRENT_USER: 'bxvh_current_user',
-  USERS: 'bxvh_users',
-  UNITS: 'bxvh_units',
-  CLANS: 'bxvh_clans',
-  HOUSEHOLDS: 'bxvh_households',
-  PERIODS: 'bxvh_periods',
-  SELECTED_PERIOD: 'bxvh_selected_period',
-  PROGRESS: 'bxvh_progress',
-  SCORES: 'bxvh_scores',
-  CRITERIA: 'bxvh_criteria',
-  BONUS_CATEGORIES: 'bxvh_bonus_categories',
-  PENALTY_CATEGORIES: 'bxvh_penalty_categories',
-  TITLE_CATEGORIES: 'bxvh_title_categories',
-  HOUSEHOLD_TYPES: 'bxvh_household_types',
-};
-
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Communes (Xã / Phường)
-  const [communes, setCommunes] = useState<Commune[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.COMMUNES);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return parsed && parsed.length > 0 ? parsed : INITIAL_COMMUNES;
-  });
+  const [isDbLoaded, setIsDbLoaded] = useState(false);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (saved) {
-      const u = JSON.parse(saved);
-      if (u.communeId) {
-        localStorage.setItem(STORAGE_KEYS.SELECTED_COMMUNE, u.communeId);
-      }
-      return u;
-    }
-    return INITIAL_USERS[0];
-  });
+  // Communes (Xã / Phường)
+  const [communes, setCommunes] = useState<Commune[]>([]);
+
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Users
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return parsed && parsed.length > 0 ? parsed : INITIAL_USERS;
-  });
+  const [users, setUsers] = useState<User[]>([]);
 
-  const [selectedCommuneId, setSelectedCommuneIdState] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SELECTED_COMMUNE);
-    if (saved) return saved;
-    const userSaved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (userSaved) {
-      const u = JSON.parse(userSaved);
-      if (u.communeId) return u.communeId;
-    }
-    return 'commune-1';
-  });
+  const [selectedCommuneId, setSelectedCommuneIdState] = useState<string>('');
 
   // All Units
-  const [allUnits, setAllUnits] = useState<Unit[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.UNITS);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return parsed && parsed.length > 0 ? parsed : INITIAL_UNITS;
-  });
+  const [allUnits, setAllUnits] = useState<Unit[]>([]);
 
   // All Clans
-  const [allClans, setAllClans] = useState<Clan[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CLANS);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return parsed && parsed.length > 0 ? parsed : INITIAL_CLANS;
-  });
+  const [allClans, setAllClans] = useState<Clan[]>([]);
 
   // All Households
-  const [allHouseholds, setAllHouseholds] = useState<Household[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.HOUSEHOLDS);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return parsed && parsed.length > 0 ? parsed : INITIAL_HOUSEHOLDS;
-  });
+  const [allHouseholds, setAllHouseholds] = useState<Household[]>([]);
 
   // All Periods (Xã/phường tự tạo)
-  const [allPeriods, setAllPeriods] = useState<EvaluationPeriod[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PERIODS);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return parsed && parsed.length > 0 ? parsed : INITIAL_PERIODS;
-  });
+  const [allPeriods, setAllPeriods] = useState<EvaluationPeriod[]>([]);
 
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SELECTED_PERIOD);
-    return saved || 'period-hk-2026';
-  });
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
 
-  const [progressList, setProgressList] = useState<UnitPeriodProgress[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PROGRESS);
-    return saved ? JSON.parse(saved) : INITIAL_PROGRESS;
-  });
+  const [progressList, setProgressList] = useState<UnitPeriodProgress[]>([]);
 
-  const [scores, setScores] = useState<EvaluationScoreItem[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SCORES);
-    return saved ? JSON.parse(saved) : INITIAL_SCORES;
-  });
+  const [scores, setScores] = useState<EvaluationScoreItem[]>([]);
 
   // Master Data Catalogs
-  const [criteria, setCriteria] = useState<CriterionItem[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CRITERIA);
-    return saved ? JSON.parse(saved) : INITIAL_CRITERIA;
-  });
+  const [criteria, setCriteria] = useState<CriterionItem[]>([]);
 
-  const [bonusCategories, setBonusCategories] = useState<BonusCategory[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.BONUS_CATEGORIES);
-    return saved ? JSON.parse(saved) : INITIAL_BONUS_CATEGORIES;
-  });
+  const [bonusCategories, setBonusCategories] = useState<BonusCategory[]>([]);
 
-  const [penaltyCategories, setPenaltyCategories] = useState<PenaltyCategory[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PENALTY_CATEGORIES);
-    return saved ? JSON.parse(saved) : INITIAL_PENALTY_CATEGORIES;
-  });
+  const [penaltyCategories, setPenaltyCategories] = useState<PenaltyCategory[]>([]);
 
-  const [titleCategories, setTitleCategories] = useState<TitleCategory[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.TITLE_CATEGORIES);
-    return saved ? JSON.parse(saved) : INITIAL_TITLE_CATEGORIES;
-  });
+  const [titleCategories, setTitleCategories] = useState<TitleCategory[]>([]);
 
-  const [householdTypes, setHouseholdTypes] = useState<HouseholdTypeCategory[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.HOUSEHOLD_TYPES);
-    return saved ? JSON.parse(saved) : INITIAL_HOUSEHOLD_TYPES;
-  });
+  const [householdTypes, setHouseholdTypes] = useState<HouseholdTypeCategory[]>([]);
 
-  // Sync state to LocalStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.COMMUNES, JSON.stringify(communes));
-  }, [communes]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SELECTED_COMMUNE, selectedCommuneId);
-  }, [selectedCommuneId]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-  }, [users]);
-  useEffect(() => {
-    if (currentUser) localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
-    else localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-  }, [currentUser]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(allUnits));
-  }, [allUnits]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CLANS, JSON.stringify(allClans));
-  }, [allClans]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.HOUSEHOLDS, JSON.stringify(allHouseholds));
-  }, [allHouseholds]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PERIODS, JSON.stringify(allPeriods));
-  }, [allPeriods]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SELECTED_PERIOD, selectedPeriodId);
-  }, [selectedPeriodId]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PROGRESS, JSON.stringify(progressList));
-  }, [progressList]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SCORES, JSON.stringify(scores));
-  }, [scores]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CRITERIA, JSON.stringify(criteria));
-  }, [criteria]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.BONUS_CATEGORIES, JSON.stringify(bonusCategories));
-  }, [bonusCategories]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PENALTY_CATEGORIES, JSON.stringify(penaltyCategories));
-  }, [penaltyCategories]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.TITLE_CATEGORIES, JSON.stringify(titleCategories));
-  }, [titleCategories]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.HOUSEHOLD_TYPES, JSON.stringify(householdTypes));
-  }, [householdTypes]);
+    let cancelled = false;
+
+    const loadData = async () => {
+      try {
+        const response = await fetch('/api/data');
+        if (!response.ok) {
+          throw new Error('Không thể tải dữ liệu từ cơ sở dữ liệu.');
+        }
+
+        const data = (await response.json()) as AppDataPayload;
+        if (cancelled) return;
+
+        const dbCommunes = (data.communes || []).map((commune) => ({
+          ...commune,
+          communeType: normalizeCommuneType(commune.communeType),
+        }));
+        const dbUsers = data.users || [];
+        const dbUnits = data.units || [];
+        const dbClans = data.clans || [];
+        const dbHouseholds = data.households || [];
+        const dbPeriods = data.periods || [];
+        const firstUser = dbUsers[0] || null;
+        const firstCommuneId = firstUser?.communeId || dbCommunes[0]?.id || '';
+        const firstPeriod = dbPeriods.find((p) => p.communeId === firstCommuneId && p.status === 'active')
+          || dbPeriods.find((p) => p.communeId === firstCommuneId)
+          || dbPeriods[0];
+
+        setCommunes(dbCommunes);
+        setUsers(dbUsers);
+        setCurrentUser(firstUser);
+        setSelectedCommuneIdState(firstCommuneId);
+        setAllUnits(dbUnits);
+        setAllClans(dbClans);
+        setAllHouseholds(dbHouseholds);
+        setAllPeriods(dbPeriods);
+        setSelectedPeriodId(firstPeriod?.id || '');
+        setProgressList(stripProgressIds(data.progress || []));
+        setScores(data.scores || []);
+        setCriteria(data.criteria || []);
+        setBonusCategories(data.bonusCategories || []);
+        setPenaltyCategories(data.penaltyCategories || []);
+        setTitleCategories(data.titleCategories || []);
+        setHouseholdTypes(data.householdTypes || []);
+        setIsDbLoaded(true);
+      } catch (error) {
+        console.error('Không thể tải dữ liệu từ DB:', error);
+      }
+    };
+
+    loadData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const persistTable = (tableName: DataTableName, rows: unknown[]) => {
+    if (!isDbLoaded) return;
+
+    saveTableToDatabase(tableName, rows).catch((error) => {
+      console.error(error);
+    });
+  };
+
+  useEffect(() => persistTable('communes', communes), [communes, isDbLoaded]);
+  useEffect(() => persistTable('users', users), [users, isDbLoaded]);
+  useEffect(() => persistTable('units', allUnits), [allUnits, isDbLoaded]);
+  useEffect(() => persistTable('clans', allClans), [allClans, isDbLoaded]);
+  useEffect(() => persistTable('households', allHouseholds), [allHouseholds, isDbLoaded]);
+  useEffect(() => persistTable('periods', allPeriods), [allPeriods, isDbLoaded]);
+  useEffect(() => persistTable('progress', progressList), [progressList, isDbLoaded]);
+  useEffect(() => persistTable('scores', scores), [scores, isDbLoaded]);
+  useEffect(() => persistTable('criteria', criteria), [criteria, isDbLoaded]);
+  useEffect(() => persistTable('bonusCategories', bonusCategories), [bonusCategories, isDbLoaded]);
+  useEffect(() => persistTable('penaltyCategories', penaltyCategories), [penaltyCategories, isDbLoaded]);
+  useEffect(() => persistTable('titleCategories', titleCategories), [titleCategories, isDbLoaded]);
+  useEffect(() => persistTable('householdTypes', householdTypes), [householdTypes, isDbLoaded]);
 
   useEffect(() => {
     if (currentUser && currentUser.communeId && currentUser.communeId !== selectedCommuneId) {
@@ -406,17 +468,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentUser]);
 
+  useEffect(() => {
+    if (communes.length === 0) return;
+    const hasSelected = communes.some((commune) => commune.id === selectedCommuneId);
+    if (hasSelected) return;
+
+    const fallbackCommuneId = communes.some((commune) => commune.id === currentUser?.communeId)
+      ? currentUser?.communeId
+      : communes[0]?.id;
+
+    if (fallbackCommuneId) {
+      setSelectedCommuneIdState(fallbackCommuneId);
+    }
+  }, [communes, currentUser?.communeId, selectedCommuneId]);
+
   // Active Commune
-  const selectedCommune = communes.find((c) => c.id === selectedCommuneId) || communes[0];
+  const effectiveSelectedCommuneId = communes.some((commune) => commune.id === selectedCommuneId)
+    ? selectedCommuneId
+    : (communes[0]?.id || '');
+  const selectedCommune = communes.find((c) => c.id === effectiveSelectedCommuneId) || communes[0];
   const terms = useMemo(() => getAdministrativeTerms(selectedCommune), [selectedCommune]);
 
   // Scoped Data by Selected Commune
-  const units = allUnits.filter((u) => u.communeId === selectedCommuneId);
-  const clans = allClans.filter((c) => c.communeId === selectedCommuneId);
+  const units = allUnits.filter((u) => u.communeId === effectiveSelectedCommuneId);
+  const clans = allClans.filter((c) => c.communeId === effectiveSelectedCommuneId);
   const households = allHouseholds.filter(
-    (h) => units.some((u) => u.id === h.unitId) || h.communeId === selectedCommuneId
+    (h) => units.some((u) => u.id === h.unitId) || h.communeId === effectiveSelectedCommuneId
   );
-  const periods = allPeriods.filter((p) => p.communeId === selectedCommuneId);
+  const periods = allPeriods.filter((p) => p.communeId === effectiveSelectedCommuneId);
 
   // Keep selectedPeriodId synchronized with valid periods
   useEffect(() => {
@@ -591,17 +670,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Unit CRUD
   const addUnit = (unit: Omit<Unit, 'id' | 'communeId'> & { communeId?: string }) => {
+    const targetCommune = resolveCommuneMeta(communes, unit.communeId || selectedCommuneId);
     const newUnit: Unit = {
       ...unit,
       id: `unit-${Date.now()}`,
-      communeId: unit.communeId || selectedCommuneId,
-      communeName: selectedCommune?.name || '',
+      communeId: targetCommune.communeId || selectedCommuneId,
+      communeName: unit.communeName || targetCommune.communeName,
     };
     setAllUnits((prev) => [...prev, newUnit]);
   };
 
   const updateUnit = (id: string, updated: Partial<Unit>) => {
-    setAllUnits((prev) => prev.map((u) => (u.id === id ? { ...u, ...updated } : u)));
+    const targetCommune = resolveCommuneMeta(communes, updated.communeId);
+    setAllUnits((prev) => prev.map((u) => (u.id === id ? {
+      ...u,
+      ...updated,
+      communeName: updated.communeId
+        ? (updated.communeName || targetCommune.communeName)
+        : (updated.communeName || u.communeName),
+    } : u)));
     if (updated.name) {
       setAllClans((prev) => prev.map((c) => (c.unitId === id ? { ...c, unitName: updated.name! } : c)));
       setAllHouseholds((prev) => prev.map((h) => (h.unitId === id ? { ...h, unitName: updated.name! } : h)));
@@ -614,12 +701,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const importUnits = (newUnits: (Omit<Unit, 'id' | 'communeId'> & { communeId?: string })[]) => {
-    const created: Unit[] = newUnits.map((u, i) => ({
-      ...u,
-      id: `unit-${Date.now()}-${i}`,
-      communeId: u.communeId || selectedCommuneId,
-      communeName: selectedCommune?.name || '',
-    }));
+    const created: Unit[] = newUnits.map((u, i) => {
+      const targetCommune = resolveCommuneMeta(communes, u.communeId || selectedCommuneId);
+      return {
+        ...u,
+        id: `unit-${Date.now()}-${i}`,
+        communeId: targetCommune.communeId || selectedCommuneId,
+        communeName: u.communeName || targetCommune.communeName,
+      };
+    });
     setAllUnits((prev) => [...prev, ...created]);
   };
 
@@ -727,11 +817,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // User CRUD
   const addUser = (user: Omit<User, 'id'>) => {
+    const targetCommune = communes.find((commune) => commune.id === (user.communeId || selectedCommuneId));
     const newUser: User = {
       ...user,
       id: `user-${Date.now()}`,
       communeId: user.communeId || selectedCommuneId,
-      communeName: selectedCommune?.name || '',
+      communeName: user.communeName || targetCommune?.name || '',
     };
     setUsers((prev) => [...prev, newUser]);
   };
@@ -797,11 +888,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: check.reason || 'Không được phép chỉnh sửa điểm.' };
     }
 
-    const totalStandardScore =
-      (scoreData.criteriaScores.standard1 || 0) +
-      (scoreData.criteriaScores.standard2 || 0) +
-      (scoreData.criteriaScores.standard3 || 0) +
-      (scoreData.criteriaScores.standard4 || 0);
+    const totalStandardScore = Object.values(scoreData.criteriaScores).reduce(
+      (sum, v) => sum + (v || 0),
+      0
+    );
 
     const bonus = scoreData.bonusPoints || 0;
     const penalty = scoreData.penaltyPoints || 0;
@@ -821,6 +911,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unitId: scoreData.unitId,
       unitName: scoreData.unitName,
       criteriaScores: scoreData.criteriaScores,
+      itemScores: scoreData.itemScores ?? existing?.itemScores,
       bonusPoints: bonus,
       penaltyPoints: penalty,
       totalStandardScore,
@@ -861,6 +952,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Submit Unit Data to Commune
   const submitUnitDataToXa = (unitId: string, periodId: string, notes?: string): { success: boolean; message: string } => {
+    if (currentUser?.role !== 'to_truong') {
+      return {
+        success: false,
+        message: 'Chỉ tài khoản Thôn/Tổ mới được gửi dữ liệu lên Xã/Phường.',
+      };
+    }
+
     const prog = getUnitProgress(unitId, periodId);
     if (prog.status === 'da_chot') {
       return { success: false, message: 'Hồ sơ đã được duyệt chốt trước đó, không thể gửi lại!' };
@@ -991,9 +1089,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unitName = unitObj?.name || 'Thôn/Tổ';
     const targetHhs = allHouseholds.filter((h) => h.unitId === unitId);
 
+    // Đúng bộ tiêu chuẩn Thôn/Tổ & Hộ gia đình theo vùng miền của xã/phường đang chọn
+    const unitStandards = getScoringStandards('unit', selectedCommune?.regionType);
+    const hhStandards = getScoringStandards('household', selectedCommune?.regionType);
+    const buildScores = (stds: ScoringStandardDef[], ratio: number): CriteriaScoreMap =>
+      distributeRatioStandardScore(stds, ratio);
+
     const newScores: EvaluationScoreItem[] = [];
 
     // Tự chấm điểm Thôn/Tổ
+    const unitCriteriaScores = buildScores(unitStandards, 0.95);
+    const unitTotal = Object.values(unitCriteriaScores).reduce((sum, v) => sum + (v || 0), 0);
     newScores.push({
       id: `sc-unit-${unitId}-${periodId}`,
       periodId,
@@ -1002,11 +1108,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       targetName: unitName,
       unitId,
       unitName,
-      criteriaScores: { standard1: 29, standard2: 29, standard3: 28, standard4: 9 },
+      criteriaScores: unitCriteriaScores,
       bonusPoints: 1,
       penaltyPoints: 0,
-      totalStandardScore: 95,
-      finalScore: 96,
+      totalStandardScore: unitTotal,
+      finalScore: Math.min(100, unitTotal + 1),
       isQualified: true,
       evaluatedByLevel: currentUser?.role === 'to_truong' ? 'to' : 'xa',
       comments: 'Tự chấm đạt chuẩn văn hóa cấp tổ/thôn.',
@@ -1015,13 +1121,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Chấm các Hộ gia đình trong thôn/tổ
     targetHhs.forEach((hh, i) => {
-      const s1 = 28 + (i % 3);
-      const s2 = 28 + ((i + 1) % 3);
-      const s3 = 27 + (i % 4);
-      const s4 = 9;
-      const total = s1 + s2 + s3 + s4;
+      const ratio = 0.92 + (i % 3) * 0.02; // luân phiên 92%/94%/96% cho đa dạng dữ liệu mẫu
+      const criteriaScores = buildScores(hhStandards, ratio);
+      const total = Object.values(criteriaScores).reduce((sum, v) => sum + (v || 0), 0);
       const bonus = (i % 2 === 0) ? 1 : 0;
-      const final = total + bonus;
+      const final = Math.min(100, total + bonus);
       newScores.push({
         id: `sc-hh-${hh.id}-${periodId}`,
         periodId,
@@ -1030,7 +1134,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         targetName: `Hộ ${hh.headName}`,
         unitId,
         unitName,
-        criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
+        criteriaScores,
         bonusPoints: bonus,
         penaltyPoints: 0,
         totalStandardScore: total,
@@ -1161,6 +1265,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
     const evalLevel = currentUser?.role === 'to_truong' ? 'to' : 'xa';
 
+    // Đúng bộ tiêu chuẩn hộ gia đình theo vùng miền của xã/phường đang chọn (không hardcode standard1-4)
+    const hhStandards = getScoringStandards('household', selectedCommune?.regionType);
+    const distributeByRatio = (ratio: number): CriteriaScoreMap =>
+      distributeRatioStandardScore(hhStandards, ratio);
+    const distributeByTotal = (total: number): CriteriaScoreMap =>
+      distributeExactStandardScore(hhStandards, total);
+
     setScores((prev) => {
       const updated = [...prev];
 
@@ -1184,6 +1295,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               updatedAt: nowStr,
             };
           } else {
+            const criteriaScores = distributeByTotal(97);
+            const total = Object.values(criteriaScores).reduce((sum, v) => sum + (v || 0), 0);
             updated.push({
               id: `sc-hh-${hhId}-${inputs.periodId}`,
               periodId: inputs.periodId,
@@ -1192,11 +1305,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               targetName: hhName,
               unitId: hhUnitId,
               unitName: hhUnitName,
-              criteriaScores: { standard1: 29, standard2: 29, standard3: 29, standard4: 9 },
+              criteriaScores,
               bonusPoints: 1,
               penaltyPoints: 0,
-              totalStandardScore: 96,
-              finalScore: 97,
+              totalStandardScore: total,
+              finalScore: Math.min(100, total + 1),
               isQualified: true,
               isExemplary,
               evaluatedByLevel: evalLevel,
@@ -1205,11 +1318,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } else if (inputs.mode === 'violation') {
           const penalty = 15;
-          const s1 = 20;
-          const s2 = 25;
-          const s3 = 20;
-          const s4 = 5;
-          const total = s1 + s2 + s3 + s4;
+          const criteriaScores = distributeByRatio(0.7);
+          const total = Object.values(criteriaScores).reduce((sum, v) => sum + (v || 0), 0);
           const finalScore = Math.max(0, total - penalty);
           const scoreObj: EvaluationScoreItem = {
             id: existing?.id || `sc-hh-${hhId}-${inputs.periodId}`,
@@ -1219,7 +1329,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             targetName: hhName,
             unitId: hhUnitId,
             unitName: hhUnitName,
-            criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
+            criteriaScores,
             bonusPoints: 0,
             penaltyPoints: penalty,
             totalStandardScore: total,
@@ -1242,17 +1352,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const passCount = Math.max(1, Math.ceil(inputs.householdIds.length * ratio));
           const isPass = idx < passCount;
 
-          let s1 = isPass ? 28 : 25;
-          let s2 = isPass ? 28 : 24;
-          let s3 = isPass ? 28 : 24;
-          let s4 = isPass ? 9 : 7;
-          let bonus = isPass ? 1 : 0;
-          let penalty = isPass ? 0 : 5;
-          if (inputs.mode === 'ratio_95' && isPass) {
-            s1 = 29; s2 = 29; s3 = 28; s4 = 9; bonus = 0;
-          }
-          const total = s1 + s2 + s3 + s4;
-          const finalScore = total + bonus - penalty;
+          const bonus = isPass ? (inputs.mode === 'ratio_95' ? 0 : 1) : 0;
+          const penalty = isPass ? 0 : 5;
+          const criteriaScores = distributeByTotal(isPass ? (inputs.mode === 'ratio_95' ? 97 : 93) : 80);
+          const total = Object.values(criteriaScores).reduce((sum, v) => sum + (v || 0), 0);
+          const finalScore = Math.max(0, Math.min(100, total + bonus - penalty));
 
           const scoreObj: EvaluationScoreItem = {
             id: existing?.id || `sc-hh-${hhId}-${inputs.periodId}`,
@@ -1262,7 +1366,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             targetName: hhName,
             unitId: hhUnitId,
             unitName: hhUnitName,
-            criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
+            criteriaScores,
             bonusPoints: bonus,
             penaltyPoints: penalty,
             totalStandardScore: total,
@@ -1282,18 +1386,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } else {
           // pass_90 | pass_95 | pass_100
-          let s1 = 27;
-          let s2 = 27;
-          let s3 = 27;
-          let s4 = 9;
-          let bonus = 0;
-          if (inputs.mode === 'pass_95') {
-            s1 = 29; s2 = 29; s3 = 28; s4 = 9; bonus = 0;
-          } else if (inputs.mode === 'pass_100') {
-            s1 = 30; s2 = 30; s3 = 30; s4 = 10; bonus = 0;
-          }
-          const total = s1 + s2 + s3 + s4;
-          const finalScore = total + bonus;
+          const targetTotal = inputs.mode === 'pass_100' ? 100 : inputs.mode === 'pass_95' ? 95 : 90;
+          const bonus = 0;
+          const criteriaScores = distributeByTotal(targetTotal);
+          const total = Object.values(criteriaScores).reduce((sum, v) => sum + (v || 0), 0);
+          const finalScore = Math.min(100, total + bonus);
 
           const scoreObj: EvaluationScoreItem = {
             id: existing?.id || `sc-hh-${hhId}-${inputs.periodId}`,
@@ -1303,7 +1400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             targetName: hhName,
             unitId: hhUnitId,
             unitName: hhUnitName,
-            criteriaScores: { standard1: s1, standard2: s2, standard3: s3, standard4: s4 },
+            criteriaScores,
             bonusPoints: bonus,
             penaltyPoints: 0,
             totalStandardScore: total,
@@ -1460,7 +1557,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCriteria((prev) => prev.filter((c) => c.id !== id));
   };
   const resetCriteria = () => {
-    setCriteria(INITIAL_CRITERIA);
+    setCriteria([]);
+  };
+
+  // Nhóm các tiêu chí con theo standardKey và cộng dồn điểm tối đa, đúng theo targetType + vùng miền
+  const getScoringStandards = (
+    targetType: 'household' | 'unit' | 'clan',
+    regionType?: 'dong_bang' | 'mien_nui'
+  ): ScoringStandardDef[] => {
+    const effectiveRegion = regionType || 'dong_bang';
+    const matching = criteria.filter(
+      (c) =>
+        (c.targetType === targetType || c.targetType === 'all') &&
+        c.regionType === effectiveRegion
+    );
+    // Không có bộ tiêu chí riêng theo vùng (VD: dòng họ) -> dùng bộ tiêu chí chung (không gắn vùng miền)
+    const source = matching.length > 0 ? matching : criteria.filter(
+      (c) => (c.targetType === targetType || c.targetType === 'all') && !c.regionType
+    );
+
+    const groups = new Map<StandardKey, CriterionItem[]>();
+    source.forEach((item) => {
+      const list = groups.get(item.standardKey) || [];
+      list.push(item);
+      groups.set(item.standardKey, list);
+    });
+
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, items]) => ({
+        key,
+        label: STANDARD_LABELS[targetType]?.[key] || key,
+        maxPoints: items.reduce((sum, i) => sum + i.maxPoints, 0),
+        items: [...items].sort((a, b) => a.order - b.order),
+      }));
   };
 
   const addBonusCategory = (item: Omit<BonusCategory, 'id'>) => {
@@ -1474,7 +1604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setBonusCategories((prev) => prev.filter((b) => b.id !== id));
   };
   const resetBonusCategories = () => {
-    setBonusCategories(INITIAL_BONUS_CATEGORIES);
+    setBonusCategories([]);
   };
 
   const addPenaltyCategory = (item: Omit<PenaltyCategory, 'id'>) => {
@@ -1488,7 +1618,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPenaltyCategories((prev) => prev.filter((p) => p.id !== id));
   };
   const resetPenaltyCategories = () => {
-    setPenaltyCategories(INITIAL_PENALTY_CATEGORIES);
+    setPenaltyCategories([]);
   };
 
   const addTitleCategory = (item: Omit<TitleCategory, 'id'>) => {
@@ -1502,7 +1632,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTitleCategories((prev) => prev.filter((t) => t.id !== id));
   };
   const resetTitleCategories = () => {
-    setTitleCategories(INITIAL_TITLE_CATEGORIES);
+    setTitleCategories([]);
   };
 
   const addHouseholdType = (item: Omit<HouseholdTypeCategory, 'id'>) => {
@@ -1516,27 +1646,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHouseholdTypes((prev) => prev.filter((h) => h.id !== id));
   };
   const resetHouseholdTypes = () => {
-    setHouseholdTypes(INITIAL_HOUSEHOLD_TYPES);
+    setHouseholdTypes([]);
   };
 
   const resetAllData = () => {
-    localStorage.clear();
-    setCommunes(INITIAL_COMMUNES);
-    setSelectedCommuneIdState('commune-1');
-    setCurrentUser(INITIAL_USERS[0]);
-    setUsers(INITIAL_USERS);
-    setAllUnits(INITIAL_UNITS);
-    setAllClans(INITIAL_CLANS);
-    setAllHouseholds(INITIAL_HOUSEHOLDS);
-    setAllPeriods(INITIAL_PERIODS);
-    setSelectedPeriodId('period-hk-2026');
-    setProgressList(INITIAL_PROGRESS);
-    setScores(INITIAL_SCORES);
-    setCriteria(INITIAL_CRITERIA);
-    setBonusCategories(INITIAL_BONUS_CATEGORIES);
-    setPenaltyCategories(INITIAL_PENALTY_CATEGORIES);
-    setTitleCategories(INITIAL_TITLE_CATEGORIES);
-    setHouseholdTypes(INITIAL_HOUSEHOLD_TYPES);
+    setCommunes([]);
+    setSelectedCommuneIdState('');
+    setCurrentUser(null);
+    setUsers([]);
+    setAllUnits([]);
+    setAllClans([]);
+    setAllHouseholds([]);
+    setAllPeriods([]);
+    setSelectedPeriodId('');
+    setProgressList([]);
+    setScores([]);
+    setCriteria([]);
+    setBonusCategories([]);
+    setPenaltyCategories([]);
+    setTitleCategories([]);
+    setHouseholdTypes([]);
   };
 
   return (
@@ -1569,6 +1698,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         penaltyCategories,
         titleCategories,
         householdTypes,
+        getScoringStandards,
         addCriterion,
         updateCriterion,
         deleteCriterion,

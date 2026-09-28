@@ -28,14 +28,26 @@ export const ClansView: React.FC = () => {
     importClans,
     currentUser,
     selectedCommune,
+    selectedPeriod,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
+  const [selectedYearFilter, setSelectedYearFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClan, setEditingClan] = useState<Clan | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  const recognitionYearOptions = Array.from(
+    new Set(
+      [
+        selectedPeriod?.year,
+        new Date().getFullYear(),
+        ...clans.map((clan) => clan.recognitionYear).filter((year): year is number => Boolean(year)),
+      ].filter((year): year is number => typeof year === 'number')
+    )
+  ).sort((left, right) => right - left);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -59,7 +71,9 @@ export const ClansView: React.FC = () => {
     const matchesUnit = selectedUnitFilter === 'all' || c.unitId === selectedUnitFilter;
     const matchesStatus =
       selectedStatusFilter === 'all' || (c.culturalStatus || 'chua_cong_nhan') === selectedStatusFilter;
-    return matchesSearch && matchesUnit && matchesStatus;
+    const matchesYear =
+      selectedYearFilter === 'all' || String(c.recognitionYear || '') === selectedYearFilter;
+    return matchesSearch && matchesUnit && matchesStatus && matchesYear;
   });
 
   const openCreateModal = () => {
@@ -258,6 +272,19 @@ export const ClansView: React.FC = () => {
             <option value="dat_chuan">✓ Đã công nhận Dòng họ VH</option>
             <option value="dang_tham_tra">⏳ Đang thẩm tra hồ sơ</option>
             <option value="chua_cong_nhan">○ Chưa công nhận</option>
+          </select>
+
+          <select
+            value={selectedYearFilter}
+            onChange={(e) => setSelectedYearFilter(e.target.value)}
+            className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-hidden"
+          >
+            <option value="all">Tất cả năm công nhận</option>
+            {recognitionYearOptions.map((year) => (
+              <option key={year} value={String(year)}>
+                Năm {year}
+              </option>
+            ))}
           </select>
         </div>
 

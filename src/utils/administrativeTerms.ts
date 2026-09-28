@@ -44,13 +44,52 @@ export function getAdministrativeTerms(
   const name = (commune?.name || '').trim();
   const type = commune?.communeType;
 
-  const isWard =
-    type === 'phuong' ||
+  const isSpecialZone =
+    type === '3' ||
     type === 'thi_tran' ||
+    name.toLowerCase().startsWith('đặc khu') ||
+    name.toLowerCase().includes('đặc khu');
+
+  const isWard =
+    type === '2' ||
+    type === 'phuong' ||
+    isSpecialZone ||
     name.toLowerCase().startsWith('phường') ||
     name.toLowerCase().includes('phường') ||
-    name.toLowerCase().startsWith('thị trấn') ||
-    name.toLowerCase().includes('thị trấn');
+    name.toLowerCase().startsWith('đặc khu') ||
+    name.toLowerCase().includes('đặc khu');
+
+  if (isSpecialZone) {
+    return {
+      isWard: true,
+      communeLevel: 'Đặc khu',
+      communeLevelLower: 'đặc khu',
+      communeGov: 'UBND Đặc khu',
+      communeGovLower: 'UBND đặc khu',
+      communeOfficer: 'Cán bộ Đặc khu',
+      communeOfficerLower: 'cán bộ đặc khu',
+      communeCouncil: 'Hội đồng Đặc khu',
+      communeApproval: 'Cấp Đặc khu',
+      communeApprovalLower: 'cấp đặc khu',
+
+      unitLabel: 'Tổ dân phố',
+      unitLabelLower: 'tổ dân phố',
+      unitLabelShort: 'Tổ DP',
+      unitLabelShortLower: 'tổ DP',
+      unitLabelPlural: 'các Tổ dân phố',
+      unitLabelPluralLower: 'các tổ dân phố',
+      unitLeader: 'Tổ trưởng',
+      unitLeaderLower: 'tổ trưởng',
+      unitCulturalTitle: 'Tổ dân phố Văn hóa',
+      unitCulturalTitleLower: 'tổ dân phố văn hóa',
+      unitMeeting: 'Họp tổ dân phố',
+      unitReport: 'Báo cáo thành tích Tổ dân phố',
+
+      communeAndUnit: 'Đặc khu, Tổ dân phố',
+      unitAndCommune: 'Tổ dân phố và Đặc khu',
+      householdAndUnit: 'Hộ & Tổ DP',
+    };
+  }
 
   if (isWard) {
     return {

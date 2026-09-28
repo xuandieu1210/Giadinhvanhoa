@@ -35,6 +35,7 @@ export const ScoringView: React.FC = () => {
   const {
     selectedPeriod,
     selectedPeriodId,
+    selectedCommune,
     units,
     households,
     scores,
@@ -47,10 +48,17 @@ export const ScoringView: React.FC = () => {
     toggleExemplaryHousehold,
     updateUnitReportFiles,
     getUnitProgress,
+    getScoringStandards,
     isPeriodExpired,
     currentUser,
     canEditUnitScores,
   } = useApp();
+
+  // Bộ tiêu chuẩn chấm điểm hộ gia đình đúng theo vùng miền của xã/phường đang chọn
+  const householdStandards = React.useMemo(
+    () => getScoringStandards('household', selectedCommune?.regionType),
+    [getScoringStandards, selectedCommune?.regionType]
+  );
 
   // Active target tab: 'household' | 'unit' (Thôn/tổ tự chấm các hộ và thôn/tổ mình)
   const [targetType, setTargetType] = useState<'household' | 'unit'>('household');
@@ -115,6 +123,7 @@ export const ScoringView: React.FC = () => {
   const currentUnit = units.find((u) => u.id === activeUnitId) || units[0];
   const unitProgress = currentUnit ? getUnitProgress(currentUnit.id, effectivePeriodId) : null;
   const expired = isPeriodExpired(selectedPeriod);
+  const isUnitLeader = currentUser?.role === 'to_truong';
 
   // Permission check for this unit
   const editCheck = currentUnit ? canEditUnitScores(currentUnit.id, effectivePeriodId) : { allowed: false };
@@ -379,7 +388,7 @@ export const ScoringView: React.FC = () => {
             )}
 
             {/* Send to Commune Button */}
-            {(unitProgress?.status === 'chua_gui' || unitProgress?.status === 'tra_lai') && (
+            {isUnitLeader && (unitProgress?.status === 'chua_gui' || unitProgress?.status === 'tra_lai') && (
               <button
                 disabled={!canEdit}
                 onClick={() => setIsSubmitModalOpen(true)}
@@ -794,10 +803,11 @@ export const ScoringView: React.FC = () => {
                     <th className="p-3">Mã hộ</th>
                     <th className="p-3">Chủ hộ & Địa chỉ</th>
                     <th className="p-3">Cụm dân cư</th>
-                    <th className="p-3 text-center">TC1 (30đ)</th>
-                    <th className="p-3 text-center">TC2 (30đ)</th>
-                    <th className="p-3 text-center">TC3 (30đ)</th>
-                    <th className="p-3 text-center">TC4 (10đ)</th>
+                    {householdStandards.map((std, idx) => (
+                      <th key={std.key} className="p-3 text-center">
+                        TC{idx + 1} ({std.maxPoints}đ)
+                      </th>
+                    ))}
                     <th className="p-3 text-center">Cộng/Trừ</th>
                     <th className="p-3 text-center">Tổng điểm</th>
                     <th className="p-3 text-center">Danh hiệu & Minh chứng</th>
@@ -807,7 +817,7 @@ export const ScoringView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 text-slate-600">
                   {unitHouseholds.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="p-8 text-center text-slate-400">
+                      <td colSpan={9 + householdStandards.length} className="p-8 text-center text-slate-400">
                         Không tìm thấy hộ gia đình nào phù hợp với bộ lọc.
                       </td>
                     </tr>
@@ -882,18 +892,11 @@ export const ScoringView: React.FC = () => {
                           </td>
 
                           {/* Scores breakdown */}
-                          <td className="p-3 text-center font-medium">
-                            {sc ? `${sc.criteriaScores.standard1}/30` : '—'}
-                          </td>
-                          <td className="p-3 text-center font-medium">
-                            {sc ? `${sc.criteriaScores.standard2}/30` : '—'}
-                          </td>
-                          <td className="p-3 text-center font-medium">
-                            {sc ? `${sc.criteriaScores.standard3}/30` : '—'}
-                          </td>
-                          <td className="p-3 text-center font-medium">
-                            {sc ? `${sc.criteriaScores.standard4}/10` : '—'}
-                          </td>
+                          {householdStandards.map((std) => (
+                            <td key={std.key} className="p-3 text-center font-medium">
+                              {sc ? `${sc.criteriaScores[std.key] ?? 0}/${std.maxPoints}` : '—'}
+                            </td>
+                          ))}
                           <td className="p-3 text-center text-[11px]">
                             {sc ? (
                               <span className="font-mono">
@@ -1192,13 +1195,13 @@ export const ScoringView: React.FC = () => {
       )}
 
       {/* Confirmation Modal to Submit Data from Tổ to Xã */}
-      {isSubmitModalOpen && (
+      {isUnitLeader && isSubmitModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-6">
             <div className="bg-red-700 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-bold flex items-center gap-2">
                 <Send className="w-5 h-5" />
-                Xác nhận gửi dữ liệu lên Xã
+                {`Xác nhận gửi dữ liệu lên ${terms.communeLevel}`}
               </h3>
               <button
                 onClick={() => setIsSubmitModalOpen(false)}

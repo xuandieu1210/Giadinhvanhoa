@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { User, UserRole } from '../../types';
 
 export const UsersView: React.FC = () => {
-  const { users, units, addUser, updateUser, deleteUser, currentUser } = useApp();
+  const { users, units, communes, selectedCommuneId, addUser, updateUser, deleteUser, currentUser } = useApp();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -15,6 +15,7 @@ export const UsersView: React.FC = () => {
     username: '',
     fullName: '',
     role: (currentUser?.role === 'to_truong' ? 'to_truong' : 'to_truong') as UserRole,
+    communeId: currentUser?.communeId || selectedCommuneId || communes[0]?.id || '',
     unitId: currentUser?.role === 'to_truong' ? (currentUser.unitId || units[0]?.id || '') : (units[0]?.id || ''),
     phone: '',
     email: '',
@@ -39,6 +40,7 @@ export const UsersView: React.FC = () => {
       username: '',
       fullName: '',
       role: isToTruong ? 'to_truong' : 'to_truong',
+      communeId: currentUser?.communeId || selectedCommuneId || communes[0]?.id || '',
       unitId: isToTruong ? (currentUser?.unitId || '') : (units[0]?.id || ''),
       phone: '',
       email: '',
@@ -57,6 +59,7 @@ export const UsersView: React.FC = () => {
       username: u.username,
       fullName: u.fullName,
       role: u.role,
+      communeId: u.communeId || selectedCommuneId || communes[0]?.id || '',
       unitId: u.unitId || (units[0]?.id || ''),
       phone: u.phone || '',
       email: u.email || '',
@@ -74,18 +77,24 @@ export const UsersView: React.FC = () => {
     let unitName = 'Toàn hệ thống';
     const targetUnitId = isToTruong ? currentUser?.unitId : formData.unitId;
     const targetRole = isToTruong ? 'to_truong' : formData.role;
+    const targetCommuneId = isToTruong
+      ? (currentUser?.communeId || selectedCommuneId)
+      : (formData.communeId || selectedCommuneId);
+    const targetCommune = communes.find((commune) => commune.id === targetCommuneId);
 
     if (targetRole === 'to_truong') {
       const u = units.find((x) => x.id === targetUnitId);
       unitName = u ? u.name : 'Chưa phân';
     } else if (targetRole === 'can_bo_xa') {
-      unitName = 'UBND Xã';
+      unitName = `UBND ${targetCommune?.name || 'Xã/Phường'}`;
     }
 
     const payload = {
       username: formData.username.trim(),
       fullName: formData.fullName.trim(),
       role: targetRole,
+      communeId: targetCommuneId,
+      communeName: targetCommune?.name || '',
       unitId: targetRole === 'to_truong' ? targetUnitId : (targetRole === 'can_bo_xa' ? 'xa' : undefined),
       unitName,
       phone: formData.phone.trim(),
@@ -217,7 +226,7 @@ export const UsersView: React.FC = () => {
                           {roleBadge.text}
                         </span>
                       </td>
-                      <td className="p-3 font-medium text-slate-800">{u.unitName || 'Toàn hệ thống'}</td>
+                      <td className="p-3 font-medium text-slate-800">{u.role === 'can_bo_xa' ? (u.communeName || u.unitName || 'Chưa gán xã/phường') : (u.unitName || 'Toàn hệ thống')}</td>
                       <td className="p-3 text-slate-600">{u.phone || '—'}</td>
                       <td className="p-3 text-slate-600">{u.email || '—'}</td>
                       <td className="p-3 text-center">
@@ -316,6 +325,25 @@ export const UsersView: React.FC = () => {
               ) : (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900">
                   Tài khoản thêm mới sẽ thuộc đơn vị: <strong>{currentUnitObj?.name}</strong> (Vai trò: Tổ trưởng / Trưởng thôn)
+                </div>
+              )}
+
+              {!isToTruong && formData.role === 'can_bo_xa' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Xã / Phường / Đặc khu phụ trách *
+                  </label>
+                  <select
+                    value={formData.communeId}
+                    onChange={(e) => setFormData({ ...formData, communeId: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-hidden bg-white cursor-pointer"
+                  >
+                    {communes.map((commune) => (
+                      <option key={commune.id} value={commune.id}>
+                        {commune.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
