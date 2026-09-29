@@ -52,8 +52,8 @@ export const UnitsView: React.FC = () => {
       name: `${terms.unitLabel} ${units.length + 1}`,
       leaderName: '',
       leaderPhone: '',
-      totalHouseholds: 120,
-      totalPopulation: 480,
+      totalHouseholds: 0,
+      totalPopulation: 0,
       notes: '',
     });
     setIsModalOpen(true);
@@ -350,31 +350,8 @@ export const UnitsView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Tổng số hộ gia đình
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.totalHouseholds}
-                    onChange={(e) => setFormData({ ...formData, totalHouseholds: Number(e.target.value) })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-hidden"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Tổng số nhân khẩu
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.totalPopulation}
-                    onChange={(e) => setFormData({ ...formData, totalPopulation: Number(e.target.value) })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-hidden"
-                  />
-                </div>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Số hộ và nhân khẩu được tự động tính từ danh sách hộ gia đình thuộc {terms.unitLabelLower} này.
               </div>
 
               <div>

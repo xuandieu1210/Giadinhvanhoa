@@ -76,9 +76,6 @@ const MainLayout: React.FC = () => {
             <span>
               Hệ thống Bình xét Danh hiệu Văn hóa Cấp Cơ sở © 2026 — UBND Xã / Phường
             </span>
-            <span className="text-[11px] text-slate-400">
-              Căn cứ Nghị định số 86/2023/NĐ-CP của Chính phủ
-            </span>
           </div>
         </footer>
       </div>

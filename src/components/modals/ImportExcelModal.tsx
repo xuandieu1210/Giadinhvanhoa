@@ -8,7 +8,7 @@ interface ImportExcelModalProps {
   isOpen: boolean;
   onClose: () => void;
   type: 'unit' | 'clan' | 'household';
-  onImportSuccess: (importedData: any[]) => void;
+  onImportSuccess: (importedData: any[]) => void | Promise<void>;
 }
 
 export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
@@ -119,7 +119,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (previewRows.length === 0) return;
 
     let mappedData: any[] = [];
@@ -187,6 +187,9 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
       try {
         mappedData = previewRows.map((r, i) => {
           const unit = resolveUnitByCode(r, i);
+          const genderValue = String(r['Giới tính'] ?? '').trim();
+          const memberCountValue = String(r['Số nhân khẩu'] ?? '').trim();
+          const memberCount = memberCountValue === '' ? undefined : Number(memberCountValue);
           const isParty =
             String(r['Gia đình Đảng viên'] || r['Đảng viên'] || '').toLowerCase().includes('có') ||
             String(r['Gia đình Đảng viên'] || '').trim().toLowerCase() === 'x' ||
@@ -194,9 +197,9 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
           return {
             code: r['Mã hộ'] || `HGĐ-NEW-${i + 1}`,
             headName: r['Chủ hộ'] || r['Họ và tên'] || `Hộ mới ${i + 1}`,
-            gender: r['Giới tính'] === 'Nữ' ? 'Nữ' : 'Nam',
+            gender: genderValue ? (genderValue === 'Nữ' ? 'Nữ' : 'Nam') : undefined,
             birthYear: Number(r['Năm sinh']) || undefined,
-            memberCount: Number(r['Số nhân khẩu']) || 4,
+            memberCount: memberCount !== undefined && Number.isFinite(memberCount) ? memberCount : undefined,
             isPartyMemberFamily: isParty,
             partyMemberCount: isParty ? (Number(r['Số Đảng viên']) || 1) : 0,
             address: r['Địa chỉ'] || 'Chưa cập nhật',
@@ -213,8 +216,15 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
       }
     }
 
-    onImportSuccess(mappedData);
-    onClose();
+    setIsProcessing(true);
+    try {
+      await onImportSuccess(mappedData);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Không thể lưu dữ liệu vào cơ sở dữ liệu. Vui lòng thử lại.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -327,8 +337,9 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
           {/* Footer */}
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
             <button
+              disabled={isProcessing}
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Hủy
             </button>
@@ -338,7 +349,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
               className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
             >
               <Check className="w-4 h-4" />
-              Xác nhận nhập {previewRows.length} bản ghi
+              {isProcessing ? 'Đang lưu dữ liệu...' : `Xác nhận nhập ${previewRows.length} bản ghi`}
             </button>
           </div>
         </div>

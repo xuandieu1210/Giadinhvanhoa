@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Edit2, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Edit2, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Household } from '../../types';
 import { exportHouseholdsToExcel } from '../../utils/excel';
@@ -20,6 +20,8 @@ export const HouseholdsView: React.FC = () => {
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>('all');
   const [selectedClusterFilter, setSelectedClusterFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,9 +32,9 @@ export const HouseholdsView: React.FC = () => {
   const [formData, setFormData] = useState({
     code: '',
     headName: '',
-    gender: 'Nam' as 'Nam' | 'Nữ',
+    gender: 'Nam' as 'Nam' | 'Nữ' | '',
     birthYear: 1980,
-    memberCount: 4,
+    memberCount: 4 as number | '',
     address: '',
     unitId: units[0]?.id || '',
     residentialCluster: 'Cụm 1',
@@ -67,6 +69,12 @@ export const HouseholdsView: React.FC = () => {
     return matchesSearch && matchesUnit && matchesCluster && matchesParty;
   });
 
+  const pageCount = Math.max(1, Math.ceil(filteredHouseholds.length / pageSize));
+  const activePage = Math.min(currentPage, pageCount);
+  const pageHouseholds = filteredHouseholds.slice((activePage - 1) * pageSize, activePage * pageSize);
+  const firstVisibleHousehold = filteredHouseholds.length === 0 ? 0 : (activePage - 1) * pageSize + 1;
+  const lastVisibleHousehold = Math.min(activePage * pageSize, filteredHouseholds.length);
+
   const partyHouseholdCount = households.filter((h) => h.isPartyMemberFamily).length;
 
   const openCreateModal = () => {
@@ -95,9 +103,9 @@ export const HouseholdsView: React.FC = () => {
     setFormData({
       code: h.code,
       headName: h.headName,
-      gender: h.gender,
+      gender: h.gender || '',
       birthYear: h.birthYear || 1980,
-      memberCount: h.memberCount,
+      memberCount: h.memberCount ?? '',
       address: h.address,
       unitId: h.unitId,
       residentialCluster: h.residentialCluster || 'Cụm 1',
@@ -125,6 +133,8 @@ export const HouseholdsView: React.FC = () => {
 
     const payload = {
       ...formData,
+      gender: formData.gender || undefined,
+      memberCount: formData.memberCount === '' ? undefined : formData.memberCount,
       unitName,
       residentialCluster: formData.residentialCluster?.trim() || 'Cụm 1',
     };
@@ -207,14 +217,20 @@ export const HouseholdsView: React.FC = () => {
               type="text"
               placeholder="Tìm tên chủ hộ, địa chỉ, SĐT..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden bg-white"
             />
           </div>
 
           <select
             value={selectedUnitFilter}
-            onChange={(e) => setSelectedUnitFilter(e.target.value)}
+            onChange={(e) => {
+              setSelectedUnitFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-hidden"
           >
             <option value="all">Tất cả Thôn/Tổ ({units.length})</option>
@@ -227,7 +243,10 @@ export const HouseholdsView: React.FC = () => {
 
           <select
             value={selectedClusterFilter}
-            onChange={(e) => setSelectedClusterFilter(e.target.value)}
+            onChange={(e) => {
+              setSelectedClusterFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-hidden"
           >
             <option value="all">Tất cả Cụm dân cư</option>
@@ -240,7 +259,10 @@ export const HouseholdsView: React.FC = () => {
 
           <select
             value={selectedPartyFilter}
-            onChange={(e: any) => setSelectedPartyFilter(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+              setSelectedPartyFilter(e.target.value as 'all' | 'party' | 'non_party');
+              setCurrentPage(1);
+            }}
             className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-hidden font-medium"
           >
             <option value="all">Tất cả thành phần</option>
@@ -286,13 +308,13 @@ export const HouseholdsView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredHouseholds.map((hh, idx) => {
+                pageHouseholds.map((hh, idx) => {
                   const sc = scores.find(
                     (s) => s.periodId === selectedPeriodId && s.targetType === 'household' && s.targetId === hh.id
                   );
                   return (
                     <tr key={hh.id} className="hover:bg-slate-50/80 transition">
-                      <td className="p-3 text-center font-medium text-slate-400">{idx + 1}</td>
+                      <td className="p-3 text-center font-medium text-slate-400">{(activePage - 1) * pageSize + idx + 1}</td>
                       <td className="p-3 font-mono font-bold text-slate-800">{hh.code}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -307,10 +329,10 @@ export const HouseholdsView: React.FC = () => {
                           )}
                         </div>
                         <div className="text-[11px] text-slate-400">
-                          {hh.gender}, sinh năm {hh.birthYear || '—'}
+                          {hh.gender ? `${hh.gender}, ` : ''}sinh năm {hh.birthYear || '—'}
                         </div>
                       </td>
-                      <td className="p-3 text-center font-bold text-slate-800">{hh.memberCount}</td>
+                      <td className="p-3 text-center font-bold text-slate-800">{hh.memberCount ?? ''}</td>
                       <td className="p-3 text-slate-700">
                         {units.find((u) => u.id === hh.unitId)?.name || hh.unitName || 'Chưa phân'}
                       </td>
@@ -366,6 +388,48 @@ export const HouseholdsView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600">
+          <div className="flex items-center gap-2">
+            <span>Hiển thị {firstVisibleHousehold}–{lastVisibleHousehold} / {filteredHouseholds.length} hộ</span>
+            <label className="flex items-center gap-1.5">
+              <span>Mỗi trang</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
+                aria-label="Số hộ mỗi trang"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(activePage - 1)}
+              disabled={activePage <= 1}
+              aria-label="Trang trước"
+              className="rounded-md border border-slate-300 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span>Trang {activePage} / {pageCount}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(activePage + 1)}
+              disabled={activePage >= pageCount}
+              aria-label="Trang sau"
+              className="rounded-md border border-slate-300 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Modal Add / Edit */}
@@ -414,9 +478,10 @@ export const HouseholdsView: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Giới tính</label>
                   <select
                     value={formData.gender}
-                    onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'Nam' | 'Nữ' })}
+                    onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'Nam' | 'Nữ' | '' })}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden bg-white"
                   >
+                    <option value="">Chưa nhập</option>
                     <option value="Nam">Nam</option>
                     <option value="Nữ">Nữ</option>
                   </select>
@@ -441,7 +506,12 @@ export const HouseholdsView: React.FC = () => {
                     min="1"
                     required
                     value={formData.memberCount}
-                    onChange={(e) => setFormData({ ...formData, memberCount: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        memberCount: e.target.value === '' ? '' : Number(e.target.value),
+                      })
+                    }
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
@@ -599,8 +669,8 @@ export const HouseholdsView: React.FC = () => {
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         type="household"
-        onImportSuccess={(data) => {
-          importHouseholds(data);
+        onImportSuccess={async (data) => {
+          await importHouseholds(data);
           alert(`Đã nhập thành công ${data.length} hộ gia đình từ file Excel!`);
         }}
       />

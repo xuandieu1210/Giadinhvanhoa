@@ -244,7 +244,9 @@ interface AppContextType {
   resetHouseholdTypes: () => void;
 
   // Auth
-  login: (username: string, pass: string) => { success: boolean; message?: string };
+  login: (username: string, pass: string) => Promise<{ success: boolean; message?: string }>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
+  resetUserPassword: (targetUserId: string) => Promise<{ success: boolean; message?: string }>;
   switchUser: (username: string) => void;
   logout: () => void;
 
@@ -278,7 +280,7 @@ interface AppContextType {
   addHousehold: (hh: Omit<Household, 'id' | 'communeId'> & { communeId?: string }) => void;
   updateHousehold: (id: string, hh: Partial<Household>) => void;
   deleteHousehold: (id: string) => void;
-  importHouseholds: (newHhs: (Omit<Household, 'id' | 'communeId'> & { communeId?: string })[]) => void;
+  importHouseholds: (newHhs: (Omit<Household, 'id' | 'communeId'> & { communeId?: string })[]) => Promise<void>;
 
   // Users
   addUser: (user: Omit<User, 'id'>) => void;
@@ -404,15 +406,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const dbClans = data.clans || [];
         const dbHouseholds = data.households || [];
         const dbPeriods = data.periods || [];
-        const firstUser = dbUsers[0] || null;
-        const firstCommuneId = firstUser?.communeId || dbCommunes[0]?.id || '';
+        const firstCommuneId = dbCommunes[0]?.id || '';
         const firstPeriod = dbPeriods.find((p) => p.communeId === firstCommuneId && p.status === 'active')
           || dbPeriods.find((p) => p.communeId === firstCommuneId)
           || dbPeriods[0];
 
         setCommunes(dbCommunes);
         setUsers(dbUsers);
-        setCurrentUser(firstUser);
         setSelectedCommuneIdState(firstCommuneId);
         setAllUnits(dbUnits);
         setAllClans(dbClans);
@@ -490,11 +490,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const terms = useMemo(() => getAdministrativeTerms(selectedCommune), [selectedCommune]);
 
   // Scoped Data by Selected Commune
-  const units = allUnits.filter((u) => u.communeId === effectiveSelectedCommuneId);
+  const communeUnits = allUnits.filter((u) => u.communeId === effectiveSelectedCommuneId);
   const clans = allClans.filter((c) => c.communeId === effectiveSelectedCommuneId);
   const households = allHouseholds.filter(
-    (h) => units.some((u) => u.id === h.unitId) || h.communeId === effectiveSelectedCommuneId
+    (h) => communeUnits.some((u) => u.id === h.unitId) || h.communeId === effectiveSelectedCommuneId
   );
+  const units = communeUnits.map((unit) => {
+    const unitHouseholds = allHouseholds.filter((household) => household.unitId === unit.id);
+    return {
+      ...unit,
+      totalHouseholds: unitHouseholds.length,
+      totalPopulation: unitHouseholds.reduce((total, household) => total + (household.memberCount ?? 0), 0),
+    };
+  });
   const periods = allPeriods.filter((p) => p.communeId === effectiveSelectedCommuneId);
 
   // Keep selectedPeriodId synchronized with valid periods
@@ -605,28 +613,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Auth handlers
-  const login = (username: string, pass: string): { success: boolean; message?: string } => {
-    const user = users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
-    if (!user) {
-      return { success: false, message: 'Tên đăng nhập không tồn tại!' };
-    }
+  const login = async (username: string, pass: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: pass }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        return { success: false, message: result.message || 'Đăng nhập thất bại.' };
+      }
 
-    const valid =
-      (user.username === 'admin' && pass === 'admin123') ||
-      (user.username === 'xa' && pass === 'xa123') ||
-      (user.username === 'to1' && pass === 'to123') ||
-      (user.username === 'to2' && pass === 'to2123') ||
-      pass === '123456';
-
-    if (!valid) {
-      return { success: false, message: 'Mật khẩu không chính xác! (Mặc định: [tài khoản]123)' };
+      setCurrentUser(result.user as User);
+      if (result.user.communeId) setSelectedCommuneId(result.user.communeId);
+      return { success: true };
+    } catch {
+      return { success: false, message: 'Không thể kết nối máy chủ xác thực.' };
     }
+  };
 
-    setCurrentUser(user);
-    if (user.communeId) {
-      setSelectedCommuneId(user.communeId);
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!currentUser) return { success: false, message: 'Vui lòng đăng nhập lại.' };
+    try {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id, currentPassword, newPassword }),
+      });
+      const result = await response.json();
+      return { success: response.ok && result.success, message: result.message };
+    } catch {
+      return { success: false, message: 'Không thể kết nối máy chủ để đổi mật khẩu.' };
     }
-    return { success: true };
+  };
+
+  const resetUserPassword = async (targetUserId: string) => {
+    if (!currentUser) return { success: false, message: 'Vui lòng đăng nhập lại.' };
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId }),
+      });
+      const result = await response.json();
+      return { success: response.ok && result.success, message: result.message };
+    } catch {
+      return { success: false, message: 'Không thể kết nối máy chủ để đặt lại mật khẩu.' };
+    }
   };
 
   const switchUser = (username: string) => {
@@ -640,6 +674,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     setCurrentUser(null);
   };
 
@@ -800,7 +835,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAllHouseholds((prev) => prev.filter((h) => h.id !== id));
   };
 
-  const importHouseholds = (newHhs: (Omit<Household, 'id' | 'communeId'> & { communeId?: string })[]) => {
+  const importHouseholds = async (newHhs: (Omit<Household, 'id' | 'communeId'> & { communeId?: string })[]) => {
     const created: Household[] = newHhs.map((h, i) => {
       const unitObj = units.find((u) => u.id === h.unitId);
       const resolvedUnitName = unitObj ? unitObj.name : (h.unitName || 'Chưa phân');
@@ -812,7 +847,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         communeName: selectedCommune?.name || '',
       };
     });
-    setAllHouseholds((prev) => [...prev, ...created]);
+    const nextHouseholds = [...allHouseholds, ...created];
+    await saveTableToDatabase('households', nextHouseholds);
+    setAllHouseholds(nextHouseholds);
   };
 
   // User CRUD
@@ -1720,6 +1757,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteHouseholdType,
         resetHouseholdTypes,
         login,
+        changePassword,
+        resetUserPassword,
         switchUser,
         logout,
         setSelectedPeriodId,

@@ -109,7 +109,7 @@ export const PeriodDecisionModal: React.FC<PeriodDecisionModalProps> = ({
                   disabled={readOnly}
                   value={decisionNumber}
                   onChange={(e) => setDecisionNumber(e.target.value)}
-                  placeholder="Ví dụ: 186/QĐ-UBND"
+                  placeholder="Ví dụ: "
                   className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
                 />
               </div>

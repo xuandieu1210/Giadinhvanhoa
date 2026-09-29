@@ -54,57 +54,6 @@ export const HelpGuideView: React.FC<HelpGuideViewProps> = ({ onClose }) => {
         )}
       </div>
 
-      {/* Quick Test Accounts Bar */}
-      <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2">
-        <div className="flex items-center gap-2 text-amber-950 font-bold text-sm">
-          <Key className="w-4 h-4 text-amber-700" />
-          1. Tài khoản Demo sẵn có để kiểm tra ngay:
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="bg-white p-3 rounded-lg border border-amber-200 shadow-xs">
-            <span className="font-bold text-purple-900 block mb-1">👑 Quản trị viên (Admin)</span>
-            <div className="text-slate-600 font-mono">admin / admin123</div>
-            <button
-              onClick={() => {
-                switchUser('admin');
-                onClose?.();
-              }}
-              className="mt-2 text-[11px] font-bold text-purple-700 hover:underline"
-            >
-              Chuyển sang Admin →
-            </button>
-          </div>
-
-          <div className="bg-white p-3 rounded-lg border border-amber-200 shadow-xs">
-            <span className="font-bold text-blue-900 block mb-1">🏛️ Cán bộ xã/phường (Cấp duyệt)</span>
-            <div className="text-slate-600 font-mono">{communeOfficerUser ? `${communeOfficerUser.username} / 123456` : 'Tạo trong mục Người dùng, mật khẩu mặc định 123456'}</div>
-            <button
-              onClick={() => {
-                if (communeOfficerUser) switchUser(communeOfficerUser.username);
-                onClose?.();
-              }}
-              className="mt-2 text-[11px] font-bold text-blue-700 hover:underline"
-            >
-              Chuyển sang Cán bộ Xã/Phường →
-            </button>
-          </div>
-
-          <div className="bg-white p-3 rounded-lg border border-amber-200 shadow-xs">
-            <span className="font-bold text-emerald-900 block mb-1">🏡 Tổ trưởng Tổ 1 (Cấp cơ sở)</span>
-            <div className="text-slate-600 font-mono">{unitLeaderUser ? `${unitLeaderUser.username} / 123456` : 'Tạo trong mục Người dùng, mật khẩu mặc định 123456'}</div>
-            <button
-              onClick={() => {
-                if (unitLeaderUser) switchUser(unitLeaderUser.username);
-                onClose?.();
-              }}
-              className="mt-2 text-[11px] font-bold text-emerald-700 hover:underline"
-            >
-              Chuyển sang Tổ trưởng 1 →
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* Guide Content Sections */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-700">
         {/* Section 2: Quản lý danh mục */}
@@ -124,7 +73,7 @@ export const HelpGuideView: React.FC<HelpGuideViewProps> = ({ onClose }) => {
               <strong>2.3 Quản lý Hộ gia đình:</strong> Nhập chủ hộ, số nhân khẩu, địa chỉ, mã thôn/tổ, số điện thoại và ghi chú; không bắt buộc cột tộc họ khi import Excel.
             </li>
             <li>
-              <strong>2.4 Quản lý Tiêu chí & Danh mục chuẩn (Mới):</strong> Cấu hình Bộ tiêu chí 4 tiêu chuẩn (NĐ 86/2023/NĐ-CP), Quy tắc điểm cộng khen thưởng, Quy tắc điểm trừ vi phạm, Khung danh hiệu thi đua và Phân loại hộ dân.
+              <strong>2.4 Quản lý Tiêu chí & Danh mục chuẩn (Mới):</strong> Cấu hình Bộ tiêu chí 4 tiêu chuẩn, Quy tắc điểm cộng khen thưởng, Quy tắc điểm trừ vi phạm, Khung danh hiệu thi đua và Phân loại hộ dân.
             </li>
             <li>
               <strong>2.5 Quản lý Người dùng:</strong> Chỉ Admin có quyền thêm, sửa thông tin, đổi vai trò (admin, cán bộ xã, tổ trưởng) và đơn vị phân công.

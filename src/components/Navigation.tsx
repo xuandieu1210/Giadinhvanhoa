@@ -142,7 +142,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           key: 'categories' as TabKey,
           label: 'Quản lý danh mục',
           icon: FolderTree,
-          badge: 'NĐ 86',
+          badge: '',
           badgeColor: 'bg-red-100 text-red-700 border border-red-200',
           description: 'Tiêu chuẩn, Điểm cộng/trừ, Danh hiệu',
         },
@@ -196,10 +196,10 @@ export const Navigation: React.FC<NavigationProps> = ({
           key: 'users' as TabKey,
           label: 'Quản lý người dùng',
           icon: ShieldAlert,
-          badge: 'Admin',
+          badge: isAdmin ? 'Admin' : terms.communeLevel,
           badgeColor: 'bg-purple-100 text-purple-700',
-          description: 'Phân quyền tài khoản cơ sở',
-          hidden: !isAdmin,
+          description: isAdmin ? 'Phân quyền tài khoản toàn hệ thống' : 'Quản lý tài khoản tổ trưởng thuộc đơn vị',
+          hidden: !isAdmin && currentUser?.role !== 'can_bo_xa',
         },
       ],
     },
@@ -228,7 +228,6 @@ export const Navigation: React.FC<NavigationProps> = ({
               <span className="text-[10px] font-bold px-1.5 py-0.2 bg-red-900/80 text-amber-300 rounded border border-red-700/50">
                 CẤP CƠ SỞ
               </span>
-              <span className="text-[10px] text-slate-400">NĐ 86/CP</span>
             </div>
           </div>
         </div>

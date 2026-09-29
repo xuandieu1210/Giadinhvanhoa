@@ -73,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'reports':
         return { group: 'Nghiệp vụ', title: 'Báo cáo & Thống kê' };
       case 'categories':
-        return { group: 'Danh mục', title: 'Quản lý danh mục chuẩn (NĐ 86)' };
+        return { group: 'Danh mục', title: 'Quản lý danh mục chỉ tiêu' };
       case 'periods':
         return { group: 'Danh mục', title: `Đợt bình xét của ${terms.communeLevel}` };
       case 'units':
@@ -245,87 +245,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Demo Quick Switcher Toolbar */}
-      <div className="bg-amber-50/80 border-t border-amber-200/60 px-4 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2">
-        {/* Left: Quick Commune Switch */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-amber-900 font-bold text-[11px] flex items-center gap-1">
-            <Building2 className="w-3.5 h-3.5 text-amber-700" />
-            Chọn nhanh Xã/Phường:
-          </span>
-          {communes.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setSelectedCommuneId(c.id)}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-                selectedCommuneId === c.id
-                  ? 'bg-amber-800 text-white border-amber-900 shadow-xs'
-                  : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-100/60'
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Right: Quick User Accounts & Reset */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="flex items-center gap-1 text-slate-600 font-bold text-[11px]">
-            <Shield className="w-3.5 h-3.5 text-slate-500" />
-            <span>Tài khoản:</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => switchUser('admin')}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.username === 'admin'
-                ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
-                : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-50'
-            }`}
-          >
-            Admin
-          </button>
-          <button
-            type="button"
-            onClick={() => communeOfficerUser && switchUser(communeOfficerUser.username)}
-            disabled={!communeOfficerUser}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.id === communeOfficerUser?.id
-                ? 'bg-blue-700 text-white border-blue-800 shadow-xs'
-                : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed'
-            }`}
-          >
-            {terms.communeOfficer}
-          </button>
-          <button
-            type="button"
-            onClick={() => firstUnitLeader && switchUser(firstUnitLeader.username)}
-            disabled={!firstUnitLeader}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-              currentUser?.id === firstUnitLeader?.id
-                ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed'
-            }`}
-          >
-            {terms.unitLeader} 1
-          </button>
-          {!terms.isWard && (
-            <button
-              type="button"
-              onClick={() => secondUnitLeader && switchUser(secondUnitLeader.username)}
-              disabled={!secondUnitLeader}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition border cursor-pointer ${
-                currentUser?.id === secondUnitLeader?.id
-                  ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                  : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed'
-              }`}
-            >
-              {terms.unitLeader} 2
-            </button>
-          )}
-        </div>
-      </div>
     </header>
   );
 };

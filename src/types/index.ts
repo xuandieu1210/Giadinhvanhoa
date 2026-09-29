@@ -83,9 +83,9 @@ export interface Household {
   communeName?: string;
   code: string;
   headName: string; // Chủ hộ
-  gender: 'Nam' | 'Nữ';
+  gender?: 'Nam' | 'Nữ';
   birthYear?: number;
-  memberCount: number; // Số nhân khẩu
+  memberCount?: number; // Số nhân khẩu
   address: string;
   unitId: string; // Thuộc thôn/tổ
   unitName: string;

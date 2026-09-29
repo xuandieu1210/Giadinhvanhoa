@@ -478,9 +478,6 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                 <h1 className="text-xl font-bold text-slate-800">
                   Quản lý Danh mục Hệ thống & Tiêu chuẩn Bình xét
                 </h1>
-                <span className="px-2 py-0.5 bg-red-100 text-red-800 text-[11px] font-bold rounded-full">
-                  NĐ 86/2023/NĐ-CP
-                </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 Cấu hình hệ thống danh mục chuẩn quốc gia: Tiêu chí chấm điểm, Điểm cộng khen thưởng, Điểm trừ vi phạm, Khung danh hiệu thi đua và Phân loại hộ dân.
@@ -494,7 +491,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm('Khôi phục toàn bộ danh mục về giá trị chuẩn mặc định theo Nghị định 86/2023/NĐ-CP?')) {
+                    if (window.confirm('Khôi phục toàn bộ danh mục về giá trị chuẩn ?')) {
                       resetCriteria();
                       resetBonusCategories();
                       resetPenaltyCategories();
@@ -507,7 +504,6 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                   title="Khôi phục dữ liệu danh mục mẫu"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Khôi phục chuẩn NĐ 86</span>
                 </button>
 
                 {activeSubTab === 'criteria' && (
@@ -1104,7 +1100,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
           <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
             <Award className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold">Khung danh hiệu thi đua & Tỷ lệ khen thưởng:</span> Theo Nghị định 86/2023/NĐ-CP, tỷ lệ hộ gia đình được tặng Giấy khen "Gia đình văn hóa tiêu biểu" không quá <strong>20%</strong> tổng số gia đình đạt chuẩn văn hóa tại cơ sở.
+              <span className="font-bold">Khung danh hiệu thi đua & Tỷ lệ khen thưởng:</span>  Tỷ lệ hộ gia đình được tặng Giấy khen "Gia đình văn hóa tiêu biểu" không quá <strong>20%</strong> tổng số gia đình đạt chuẩn văn hóa tại cơ sở.
             </div>
           </div>
 
@@ -1828,7 +1824,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                 <input
                   type="text"
                   name="legalDoc"
-                  defaultValue={editingTitle?.legalDoc || 'Nghị định số 86/2023/NĐ-CP'}
+                  defaultValue={editingTitle?.legalDoc || ''}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white"
                 />
               </div>

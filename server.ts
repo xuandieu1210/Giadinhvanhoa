@@ -1,6 +1,8 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { db, pool, schema } from './src/db/index.ts';
 
 dotenv.config();
@@ -24,6 +26,68 @@ const dataTables = {
 type DataTableName = keyof typeof dataTables;
 
 const tableNames = new Set(Object.keys(dataTables));
+const authSessions = new Map<string, { userId: string; expiresAt: number }>();
+const authCookieName = 'gdvh_session';
+const legacyPasswords: Record<string, string> = {
+  admin: 'admin123',
+  xa: 'xa123',
+  to1: 'to123',
+  to2: 'to2123',
+};
+
+const isLegacyPasswordValid = (username: string, password: string) =>
+  password === '123456' || legacyPasswords[username.toLowerCase()] === password;
+
+const hashPassword = (password: string) => {
+  const salt = randomBytes(16).toString('hex');
+  return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
+};
+
+const verifyPassword = (password: string, storedHash: string) => {
+  const [salt, hash] = storedHash.split(':');
+  if (!salt || !hash) return false;
+  const expected = Buffer.from(hash, 'hex');
+  const actual = scryptSync(password, salt, 64);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+};
+
+const getAuthSessionToken = (cookieHeader = '') => {
+  const cookie = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${authCookieName}=`));
+  return cookie?.slice(authCookieName.length + 1) || '';
+};
+
+const getAuthSessionUserId = (cookieHeader = '') => {
+  const token = getAuthSessionToken(cookieHeader);
+  const session = authSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    authSessions.delete(token);
+    return null;
+  }
+  return session.userId;
+};
+
+const authCookieOptions = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+
+async function syncUnitCountsFromHouseholds() {
+  if (!pool) return;
+  await pool.query(`
+    UPDATE units AS unit
+    SET
+      total_households = counts.household_count,
+      total_population = counts.population_count
+    FROM (
+      SELECT
+        unit_row.id,
+        COUNT(household.id)::integer AS household_count,
+        COALESCE(SUM(COALESCE(household.member_count, 0)), 0)::integer AS population_count
+      FROM units AS unit_row
+      LEFT JOIN households AS household ON household.unit_id = unit_row.id
+      GROUP BY unit_row.id
+    ) AS counts
+    WHERE unit.id = counts.id
+  `);
+}
 
 async function ensureDatabaseSchema() {
   if (!pool) return;
@@ -56,6 +120,11 @@ async function ensureDatabaseSchema() {
       unit_name text,
       phone text,
       email text
+    );
+
+    CREATE TABLE IF NOT EXISTS user_credentials (
+      user_id text PRIMARY KEY,
+      password_hash text NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS units (
@@ -290,6 +359,8 @@ async function ensureDatabaseSchema() {
       await pool.query(`ALTER TABLE ${tableName} ${columnSql}`);
     }
   }
+
+  await syncUnitCountsFromHouseholds();
 }
 
 function normalizeRows(tableName: DataTableName, rows: unknown[]) {
@@ -323,11 +394,123 @@ async function startServer() {
   await ensureDatabaseSchema();
 
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
 
   // API health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', postgresConnected: !!db });
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      if (!db || !pool) return res.status(503).json({ success: false, message: 'Cơ sở dữ liệu chưa sẵn sàng.' });
+
+      const username = String(req.body?.username || '').trim();
+      const password = String(req.body?.password || '');
+      const [user] = await db
+        .select()
+        .from(schema.users)
+        .where(sql`lower(${schema.users.username}) = lower(${username})`)
+        .limit(1);
+
+      if (!user) return res.status(401).json({ success: false, message: 'Tên đăng nhập không tồn tại!' });
+
+      const credential = await pool.query('SELECT password_hash FROM user_credentials WHERE user_id = $1', [user.id]);
+      const valid = credential.rows.length > 0
+        ? verifyPassword(password, credential.rows[0].password_hash)
+        : isLegacyPasswordValid(user.username, password);
+
+      if (!valid) return res.status(401).json({ success: false, message: 'Mật khẩu không chính xác!' });
+      const sessionToken = randomBytes(32).toString('hex');
+      authSessions.set(sessionToken, { userId: user.id, expiresAt: Date.now() + 8 * 60 * 60 * 1000 });
+      res.setHeader(
+        'Set-Cookie',
+        `${authCookieName}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${authCookieOptions}`
+      );
+      return res.json({ success: true, user });
+    } catch (error) {
+      console.error('Error during login:', error);
+      return res.status(500).json({ success: false, message: 'Không thể xác thực tài khoản lúc này.' });
+    }
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const sessionToken = getAuthSessionToken(req.headers.cookie);
+    if (sessionToken) authSessions.delete(sessionToken);
+    res.setHeader('Set-Cookie', `${authCookieName}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${authCookieOptions}`);
+    return res.json({ success: true });
+  });
+
+  app.post('/api/auth/change-password', async (req, res) => {
+    try {
+      if (!db || !pool) return res.status(503).json({ success: false, message: 'Cơ sở dữ liệu chưa sẵn sàng.' });
+
+      const userId = String(req.body?.userId || '');
+      const currentPassword = String(req.body?.currentPassword || '');
+      const newPassword = String(req.body?.newPassword || '');
+      if (!userId || !currentPassword || !newPassword) {
+        return res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ mật khẩu.' });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ success: false, message: 'Mật khẩu mới phải có ít nhất 6 ký tự.' });
+      }
+
+      const [user] = await db.select().from(schema.users).where(sql`${schema.users.id} = ${userId}`).limit(1);
+      if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản.' });
+
+      const credential = await pool.query('SELECT password_hash FROM user_credentials WHERE user_id = $1', [user.id]);
+      const valid = credential.rows.length > 0
+        ? verifyPassword(currentPassword, credential.rows[0].password_hash)
+        : isLegacyPasswordValid(user.username, currentPassword);
+      if (!valid) return res.status(400).json({ success: false, message: 'Mật khẩu hiện tại không chính xác.' });
+
+      await pool.query(
+        `INSERT INTO user_credentials (user_id, password_hash) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
+        [user.id, hashPassword(newPassword)]
+      );
+      return res.json({ success: true, message: 'Đổi mật khẩu thành công.' });
+    } catch (error) {
+      console.error('Error changing password:', error);
+      return res.status(500).json({ success: false, message: 'Không thể lưu mật khẩu mới lúc này.' });
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      if (!db || !pool) return res.status(503).json({ success: false, message: 'Cơ sở dữ liệu chưa sẵn sàng.' });
+
+      const targetUserId = String(req.body?.targetUserId || '');
+      const actorUserId = getAuthSessionUserId(req.headers.cookie);
+      if (!actorUserId) {
+        return res.status(401).json({ success: false, message: 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.' });
+      }
+      if (!targetUserId) {
+        return res.status(400).json({ success: false, message: 'Thiếu tài khoản cần đặt lại mật khẩu.' });
+      }
+
+      const [actor] = await db.select().from(schema.users).where(sql`${schema.users.id} = ${actorUserId}`).limit(1);
+      const [target] = await db.select().from(schema.users).where(sql`${schema.users.id} = ${targetUserId}`).limit(1);
+      if (!actor || !target) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản.' });
+
+      const mayReset = actor.id !== target.id && (
+        (actor.role === 'admin' && target.role !== 'admin') ||
+        (actor.role === 'can_bo_xa' && target.role === 'to_truong' && !!actor.communeId && actor.communeId === target.communeId)
+      );
+      if (!mayReset) {
+        return res.status(403).json({ success: false, message: 'Bạn không có quyền đặt lại mật khẩu tài khoản này.' });
+      }
+
+      await pool.query(
+        `INSERT INTO user_credentials (user_id, password_hash) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
+        [target.id, hashPassword('123456')]
+      );
+      return res.json({ success: true, message: `Đã đặt lại mật khẩu ${target.username} về 123456.` });
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      return res.status(500).json({ success: false, message: 'Không thể đặt lại mật khẩu lúc này.' });
+    }
   });
 
   app.get('/api/data', async (req, res) => {
@@ -359,6 +542,9 @@ async function startServer() {
       await db.delete(table);
       if (rows.length > 0) {
         await db.insert(table).values(rows as any[]);
+      }
+      if (tableName === 'units' || tableName === 'households') {
+        await syncUnitCountsFromHouseholds();
       }
 
       res.json({ success: true, count: rows.length });

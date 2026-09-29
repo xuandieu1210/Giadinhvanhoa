@@ -5,15 +5,15 @@ import { useApp } from '../../context/AppContext';
 export const LoginView: React.FC = () => {
   const { login, users } = useApp();
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [password, setPassword] = useState('123456');
   const [error, setError] = useState('');
   const communeOfficerUser = users.find((user) => user.role === 'can_bo_xa');
   const unitLeaderUser = users.find((user) => user.role === 'to_truong');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const res = login(username, password);
+    const res = await login(username, password);
     if (!res.success) {
       setError(res.message || 'Đăng nhập thất bại!');
     }
@@ -22,7 +22,7 @@ export const LoginView: React.FC = () => {
   const handleSelectQuickAccount = (u: string, p: string) => {
     setUsername(u);
     setPassword(p);
-    login(u, p);
+    void login(u, p);
   };
 
   return (

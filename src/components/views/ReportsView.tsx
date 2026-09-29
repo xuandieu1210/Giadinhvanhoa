@@ -41,7 +41,7 @@ export const ReportsView: React.FC = () => {
     currentUser,
   } = useApp();
 
-  const [activeReportYear, setActiveReportYear] = useState<number>(2026);
+  const [activeReportYear, setActiveReportYear] = useState<number | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<
     'progress' | 'exemplary' | 'violations' | 'documents' | 'ward_summary'
   >('progress');
@@ -140,25 +140,29 @@ export const ReportsView: React.FC = () => {
   });
 
   // Historic Rates by Year for Chart comparison
-  const yearsList = [2024, 2025, 2026];
-  const yearStats = yearsList.map((yr) => {
-    const p = periods.find((x) => x.year === yr);
-    if (!p) return { year: yr, rate: 85, qualified: 0, total: totalHhs };
+  const reportHouseholdIds = new Set(currentHouseholds.map((household) => household.id));
+  const yearStats = Array.from(new Set(periods.map((period) => period.year)))
+    .sort((a, b) => a - b)
+    .map((year) => {
+      const yearPeriodIds = new Set(periods.filter((period) => period.year === year).map((period) => period.id));
+      const yearScores = scores.filter(
+        (score) =>
+          yearPeriodIds.has(score.periodId) &&
+          score.targetType === 'household' &&
+          reportHouseholdIds.has(score.targetId)
+      );
+      const qualifiedHouseholdIds = new Set(yearScores.filter((score) => score.isQualified).map((score) => score.targetId));
 
-    const yrScores = scores.filter((s) => s.periodId === p.id && s.targetType === 'household' && currentHouseholds.some(h => h.id === s.targetId));
-    const yrQualified = yrScores.filter((s) => s.isQualified).length;
-    let calcRate = totalHhs > 0 ? Math.round((yrQualified / totalHhs) * 100) : 0;
-    if (yr === 2024) calcRate = 88;
-    if (yr === 2025) calcRate = 92;
-    if (yr === 2026 && yrScores.length > 0) calcRate = Math.round((yrQualified / totalHhs) * 100);
-
-    return {
-      year: yr,
-      rate: calcRate,
-      qualified: yrQualified,
-      total: totalHhs,
-    };
-  });
+      return {
+        year,
+        rate: totalHhs > 0 ? Math.round((qualifiedHouseholdIds.size / totalHhs) * 100) : 0,
+        qualified: qualifiedHouseholdIds.size,
+        total: totalHhs,
+        hasResults: yearScores.length > 0,
+      };
+    })
+    .filter((stat) => stat.hasResults);
+  const availableReportYears = Array.from(new Set(periods.map((period) => period.year))).sort((a, b) => b - a);
 
   // Score brackets breakdown
   const currentHouseholdIds = new Set(currentHouseholds.map(h => h.id));
@@ -214,13 +218,20 @@ export const ReportsView: React.FC = () => {
             <Calendar className="w-3.5 h-3.5 text-slate-500" />
             <span className="text-xs font-semibold text-slate-700">Năm xét:</span>
             <select
-              value={activeReportYear}
+              value={currentPeriod?.year ?? ''}
+              disabled={availableReportYears.length === 0}
               onChange={(e) => setActiveReportYear(Number(e.target.value))}
               className="text-xs font-bold text-slate-900 bg-transparent border-none focus:outline-hidden cursor-pointer"
             >
-              <option value={2026}>2026 (Hiện hành)</option>
-              <option value={2025}>2025</option>
-              <option value={2024}>2024</option>
+              {availableReportYears.length === 0 ? (
+                <option value="">Chưa có đợt xét</option>
+              ) : (
+                availableReportYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year === new Date().getFullYear() ? `${year} (Hiện hành)` : year}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -359,11 +370,15 @@ export const ReportsView: React.FC = () => {
                 Tỷ Lệ Đạt Chuẩn Gia Đình Văn Hóa Theo Năm
               </h3>
             </div>
-            <span className="text-[11px] text-slate-400">Giai đoạn 2024 - 2026</span>
+            <span className="text-[11px] text-slate-400">
+              {yearStats.length > 0 ? `Giai đoạn ${yearStats[0].year} - ${yearStats[yearStats.length - 1].year}` : 'Chưa có dữ liệu'}
+            </span>
           </div>
 
           <div className="pt-4 pb-2 space-y-5">
-            {yearStats.map((item) => (
+            {yearStats.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-400">Chưa có kết quả chấm hộ gia đình theo năm.</p>
+            ) : yearStats.map((item) => (
               <div key={item.year} className="space-y-1.5">
                 <div className="flex justify-between text-xs font-semibold">
                   <span className="text-slate-800">
@@ -374,7 +389,7 @@ export const ReportsView: React.FC = () => {
                 <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden flex">
                   <div
                     className="bg-gradient-to-r from-red-600 to-amber-500 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, Math.max(5, item.rate))}%` }}
+                    style={{ width: `${Math.min(100, Math.max(0, item.rate))}%` }}
                   />
                 </div>
               </div>
