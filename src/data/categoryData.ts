@@ -1941,7 +1941,7 @@ export const INITIAL_TITLE_CATEGORIES: TitleCategory[] = [
     minScore: 90,
     quotaPercent: undefined,
     isExemplary: false,
-    legalDoc: 'Nghị định số 86/2023/NĐ-CP',
+    legalDoc: '',
     description: 'Hộ gia đình đạt từ 90 điểm trở lên theo 4 tiêu chuẩn khung và không vi phạm điều kiện kiên quyết.',
   },
   {
@@ -1952,7 +1952,7 @@ export const INITIAL_TITLE_CATEGORIES: TitleCategory[] = [
     minScore: 95,
     quotaPercent: 20,
     isExemplary: true,
-    legalDoc: 'Nghị định số 86/2023/NĐ-CP (Điều 8)',
+    legalDoc: '',
     description: 'Chọn không quá 20% tổng số hộ đạt danh hiệu Gia đình văn hóa xuất sắc nhất để đề nghị Chủ tịch UBND xã khen thưởng.',
   },
   {
@@ -1963,7 +1963,7 @@ export const INITIAL_TITLE_CATEGORIES: TitleCategory[] = [
     minScore: 90,
     quotaPercent: undefined,
     isExemplary: false,
-    legalDoc: 'Nghị định số 86/2023/NĐ-CP',
+    legalDoc: '',
     description: 'Thôn, làng, ấp, bản, tổ dân phố đạt tỷ lệ gia đình văn hóa trên 85% và giữ vững an ninh, môi trường sáng - xanh - sạch.',
   },
   {
@@ -1974,7 +1974,7 @@ export const INITIAL_TITLE_CATEGORIES: TitleCategory[] = [
     minScore: 95,
     quotaPercent: 20,
     isExemplary: true,
-    legalDoc: 'Nghị định số 86/2023/NĐ-CP (Điều 11)',
+    legalDoc: '',
     description: 'Khen thưởng không quá 20% thôn, tổ dân phố đạt danh hiệu xuất sắc tiêu biểu hàng năm.',
   },
   {

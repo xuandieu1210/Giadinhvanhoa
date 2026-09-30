@@ -82,7 +82,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
           'Số Đảng viên': 1,
           'Địa chỉ': 'Số 102 Đường Lê Duẩn',
           'Mã Thôn/Tổ': 'TDP-01',
-          'Cụm dân cư': 'Cụm 1',
+          'Cụm dân cư': '',
           'Số điện thoại': '0905.678.910',
           'Ghi chú': 'Gia đình chấp hành tốt',
         },
@@ -189,6 +189,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
           const unit = resolveUnitByCode(r, i);
           const genderValue = String(r['Giới tính'] ?? '').trim();
           const memberCountValue = String(r['Số nhân khẩu'] ?? '').trim();
+          const residentialClusterValue = String(r['Cụm dân cư'] || r['Cụm'] || '').trim();
           const memberCount = memberCountValue === '' ? undefined : Number(memberCountValue);
           const isParty =
             String(r['Gia đình Đảng viên'] || r['Đảng viên'] || '').toLowerCase().includes('có') ||
@@ -205,7 +206,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({
             address: r['Địa chỉ'] || 'Chưa cập nhật',
             unitId: unit.id,
             unitName: unit.name,
-            residentialCluster: r['Cụm dân cư'] || r['Cụm'] || 'Cụm 1',
+            residentialCluster: residentialClusterValue || undefined,
             phone: r['Số điện thoại'] || r['SĐT'] || '',
             notes: r['Ghi chú'] || '',
           };
