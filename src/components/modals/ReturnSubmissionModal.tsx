@@ -7,6 +7,7 @@ interface ReturnSubmissionModalProps {
   targetType: 'unit' | 'household';
   targetName: string;
   unitName?: string;
+  isReopenFinalized?: boolean;
   onConfirm: (reason: string) => void;
 }
 
@@ -16,6 +17,7 @@ export const ReturnSubmissionModal: React.FC<ReturnSubmissionModalProps> = ({
   targetType,
   targetName,
   unitName,
+  isReopenFinalized = false,
   onConfirm,
 }) => {
   const [reason, setReason] = useState('');
@@ -24,6 +26,7 @@ export const ReturnSubmissionModal: React.FC<ReturnSubmissionModalProps> = ({
   if (!isOpen) return null;
 
   const PRESET_REASONS = [
+    'Dữ liệu hộ gia đình bị thiếu, cần mở lại để tổ rà soát và chấm lại.',
     'Hồ sơ chưa đầy đủ biên bản họp bình xét công khai toàn dân.',
     'Một số hộ gia đình có phản ánh vi phạm quy ước, nếp sống cần thẩm tra lại.',
     'Thiếu báo cáo thành tích và tài liệu minh chứng các chỉ tiêu chưa đạt.',
@@ -55,7 +58,7 @@ export const ReturnSubmissionModal: React.FC<ReturnSubmissionModalProps> = ({
                 Thẩm quyền Cấp Xã / Phường
               </span>
               <h3 className="text-base font-bold text-white">
-                Trả hồ sơ yêu cầu Tổ chấm lại
+                {isReopenFinalized ? 'Mở khóa hồ sơ đã duyệt chốt' : 'Trả hồ sơ yêu cầu Tổ chấm lại'}
               </h3>
             </div>
           </div>
@@ -77,7 +80,9 @@ export const ReturnSubmissionModal: React.FC<ReturnSubmissionModalProps> = ({
                 {unitName && <span className="text-slate-600"> (Thuộc {unitName})</span>}
               </p>
               <p className="text-amber-800 mt-1">
-                Sau khi trả hồ sơ, Thôn/Tổ có thể mở lại hệ thống, rà soát và chấm lại điểm cho các hộ hoặc thôn tổ mình, sau đó gửi lại cho UBND xã/phường phê duyệt.
+                {isReopenFinalized
+                  ? 'Hồ sơ sẽ được chuyển về trạng thái cần chấm lại. Tổ có thể cập nhật điểm và gửi lại để UBND xã/phường duyệt chốt lần nữa.'
+                  : 'Sau khi trả hồ sơ, Thôn/Tổ có thể rà soát, chấm lại điểm và gửi lại để UBND xã/phường phê duyệt.'}
               </p>
             </div>
           </div>
@@ -115,7 +120,9 @@ export const ReturnSubmissionModal: React.FC<ReturnSubmissionModalProps> = ({
                 if (error) setError('');
               }}
               rows={4}
-              placeholder="Nhập chi tiết các nội dung yêu cầu Thôn/Tổ phải rà soát, kiểm tra thực tế và chấm lại..."
+              placeholder={isReopenFinalized
+                ? 'Nhập lý do mở khóa và nội dung cần Tổ rà soát, chấm lại...'
+                : 'Nhập chi tiết các nội dung yêu cầu Thôn/Tổ phải rà soát, kiểm tra thực tế và chấm lại...'}
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
             />
             {error && <p className="text-xs text-rose-600 mt-1 font-medium">{error}</p>}
@@ -134,7 +141,7 @@ export const ReturnSubmissionModal: React.FC<ReturnSubmissionModalProps> = ({
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition shadow-md shadow-amber-600/20 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              Xác nhận trả hồ sơ
+              {isReopenFinalized ? 'Xác nhận mở khóa' : 'Xác nhận trả hồ sơ'}
             </button>
           </div>
         </form>

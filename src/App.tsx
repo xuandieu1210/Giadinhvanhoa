@@ -16,10 +16,14 @@ import { CommunesView } from './components/views/CommunesView';
 import { AppProvider, useApp } from './context/AppContext';
 
 const MainLayout: React.FC = () => {
-  const { currentUser } = useApp();
+  const { currentUser, isAuthLoaded } = useApp();
   const [activeTab, setActiveTab] = useState<TabKey>('scoring');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  if (!isAuthLoaded) {
+    return <div className="min-h-screen bg-slate-100" aria-busy="true" />;
+  }
 
   if (!currentUser) {
     return <LoginView />;

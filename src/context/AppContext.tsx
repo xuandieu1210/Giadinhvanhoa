@@ -190,6 +190,7 @@ interface AppContextType {
   deleteCommune: (id: string) => void;
 
   currentUser: User | null;
+  isAuthLoaded: boolean;
   users: User[];
   units: Unit[]; // Scoped to selected commune
   allUnits: Unit[];
@@ -296,6 +297,7 @@ interface AppContextType {
   saveScore: (scoreData: SaveScoreInput) => { success: boolean; message: string };
   submitUnitDataToXa: (unitId: string, periodId: string, notes?: string) => { success: boolean; message: string };
   approveAndLockUnit: (unitId: string, periodId: string, notes?: string) => { success: boolean; message: string };
+  reopenFinalizedUnit: (unitId: string, periodId: string, reason: string) => { success: boolean; message: string };
   quickPassUnit: (unitId: string, periodId: string) => { success: boolean; message: string };
   returnUnitSubmission: (unitId: string, periodId: string, returnReason: string) => { success: boolean; message: string };
   returnHouseholdScore: (householdId: string, periodId: string, returnReason: string) => { success: boolean; message: string };
@@ -349,6 +351,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [communes, setCommunes] = useState<Commune[]>([]);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
   // Users
   const [users, setUsers] = useState<User[]>([]);
@@ -433,6 +436,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     loadData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const restoreSession = async () => {
+      try {
+        const response = await fetch('/api/auth/session');
+        if (response.ok) {
+          const result = await response.json();
+          if (!cancelled && result.success) {
+            const user = result.user as User;
+            setCurrentUser(user);
+            if (user.communeId) setSelectedCommuneIdState(user.communeId);
+          }
+        }
+      } catch (error) {
+        console.error('Không thể khôi phục phiên đăng nhập:', error);
+      } finally {
+        if (!cancelled) setIsAuthLoaded(true);
+      }
+    };
+
+    void restoreSession();
     return () => {
       cancelled = true;
     };
@@ -580,7 +609,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       }
 
-      if (isPeriodExpired(targetPeriod)) {
+      if (isPeriodExpired(targetPeriod) && prog.status !== 'tra_lai') {
         return {
           allowed: false,
           reason: 'Đợt xét này đã hết hạn quy định. Tổ/thôn không được tiếp tục chấm điểm.',
@@ -1283,6 +1312,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: `Đã chuyển trả hồ sơ hộ ${targetHh ? targetHh.headName : ''} về Thôn/Tổ để chấm lại thành công!` };
   };
 
+      const reopenFinalizedUnit = (unitId: string, periodId: string, reason: string): { success: boolean; message: string } => {
+        if (currentUser?.role !== 'admin' && currentUser?.role !== 'can_bo_xa') {
+          return { success: false, message: 'Chỉ Cán bộ Xã/Phường hoặc Quản trị viên mới có quyền mở khóa hồ sơ.' };
+        }
+        if (!reason.trim()) {
+          return { success: false, message: 'Vui lòng nhập lý do mở khóa hồ sơ.' };
+        }
+
+        const prog = getUnitProgress(unitId, periodId);
+        if (prog.status !== 'da_chot') {
+          return { success: false, message: 'Chỉ hồ sơ đã duyệt chốt mới có thể mở khóa.' };
+        }
+
+        const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        const updatedProgress: UnitPeriodProgress = {
+          ...prog,
+          status: 'tra_lai',
+          returnedAt: nowStr,
+          returnedBy: currentUser.fullName,
+          returnReason: reason.trim(),
+          notes: `Hồ sơ đã được mở khóa để chấm lại lúc ${nowStr}. Lý do: ${reason.trim()}`,
+        };
+
+        setProgressList((prev) => prev.map((item) =>
+          item.unitId === unitId && item.periodId === periodId ? updatedProgress : item
+        ));
+
+        return {
+          success: true,
+          message: 'Đã mở khóa hồ sơ. Tổ trưởng có thể chấm lại và gửi hồ sơ lên phường để duyệt lại.',
+        };
+      };
+
   // Chấm nhanh nhiều hộ 1 lúc (Batch scoring)
   const batchScoreHouseholds = (inputs: {
     householdIds: string[];
@@ -1717,6 +1779,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateCommune,
         deleteCommune,
         currentUser,
+        isAuthLoaded,
         users,
         units,
         allUnits,
@@ -1785,6 +1848,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         submitUnitDataToXa,
         recallUnitSubmission,
         approveAndLockUnit,
+        reopenFinalizedUnit,
         quickPassUnit,
         returnUnitSubmission,
         returnHouseholdScore,

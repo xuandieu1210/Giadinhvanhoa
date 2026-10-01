@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { AlertCircle, KeyRound, Lock, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { AlertCircle, Lock, User as UserIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export const LoginView: React.FC = () => {
-  const { login, users } = useApp();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('123456');
+  const { login } = useApp();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const communeOfficerUser = users.find((user) => user.role === 'can_bo_xa');
-  const unitLeaderUser = users.find((user) => user.role === 'to_truong');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,12 +15,6 @@ export const LoginView: React.FC = () => {
     if (!res.success) {
       setError(res.message || 'Đăng nhập thất bại!');
     }
-  };
-
-  const handleSelectQuickAccount = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    void login(u, p);
   };
 
   return (
@@ -60,7 +52,8 @@ export const LoginView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="admin / tài khoản đã tạo"
+                  placeholder="Tên đăng nhập"
+                  autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-hidden"
@@ -76,6 +69,7 @@ export const LoginView: React.FC = () => {
                   type="password"
                   required
                   placeholder="Mật khẩu"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-hidden"

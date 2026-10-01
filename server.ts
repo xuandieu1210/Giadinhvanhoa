@@ -1,7 +1,7 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, pool, schema } from './src/db/index.ts';
 
@@ -26,8 +26,8 @@ const dataTables = {
 type DataTableName = keyof typeof dataTables;
 
 const tableNames = new Set(Object.keys(dataTables));
-const authSessions = new Map<string, { userId: string; expiresAt: number }>();
 const authCookieName = 'gdvh_session';
+const hashSessionToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const legacyPasswords: Record<string, string> = {
   admin: 'admin123',
   xa: 'xa123',
@@ -56,22 +56,10 @@ const getAuthSessionToken = (cookieHeader = '') => {
   return cookie?.slice(authCookieName.length + 1) || '';
 };
 
-const getAuthSessionUserId = (cookieHeader = '') => {
-  const token = getAuthSessionToken(cookieHeader);
-  const session = authSessions.get(token);
-  if (!session) return null;
-  if (session.expiresAt <= Date.now()) {
-    authSessions.delete(token);
-    return null;
-  }
-  return session.userId;
-};
-
 const authCookieOptions = process.env.NODE_ENV === 'production' ? '; Secure' : '';
 
-async function syncUnitCountsFromHouseholds() {
-  if (!pool) return;
-  await pool.query(`
+async function syncUnitCountsFromHouseholds(transaction?: any) {
+  const query = `
     UPDATE units AS unit
     SET
       total_households = counts.household_count,
@@ -86,7 +74,12 @@ async function syncUnitCountsFromHouseholds() {
       GROUP BY unit_row.id
     ) AS counts
     WHERE unit.id = counts.id
-  `);
+  `;
+  if (transaction) {
+    await transaction.execute(sql.raw(query));
+  } else if (pool) {
+    await pool.query(query);
+  }
 }
 
 async function ensureDatabaseSchema() {
@@ -126,6 +119,14 @@ async function ensureDatabaseSchema() {
       user_id text PRIMARY KEY,
       password_hash text NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      token_hash text PRIMARY KEY,
+      user_id text NOT NULL,
+      expires_at timestamptz NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at);
 
     CREATE TABLE IF NOT EXISTS units (
       id text PRIMARY KEY,
@@ -422,7 +423,10 @@ async function startServer() {
 
       if (!valid) return res.status(401).json({ success: false, message: 'Mật khẩu không chính xác!' });
       const sessionToken = randomBytes(32).toString('hex');
-      authSessions.set(sessionToken, { userId: user.id, expiresAt: Date.now() + 8 * 60 * 60 * 1000 });
+      await pool.query(
+        'INSERT INTO user_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)',
+        [hashSessionToken(sessionToken), user.id, new Date(Date.now() + 8 * 60 * 60 * 1000)]
+      );
       res.setHeader(
         'Set-Cookie',
         `${authCookieName}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${authCookieOptions}`
@@ -434,9 +438,39 @@ async function startServer() {
     }
   });
 
-  app.post('/api/auth/logout', (req, res) => {
+  app.get('/api/auth/session', async (req, res) => {
+    try {
+      if (!db || !pool) return res.status(503).json({ success: false });
+      const sessionToken = getAuthSessionToken(req.headers.cookie);
+      if (!sessionToken) return res.status(401).json({ success: false });
+
+      const session = await pool.query(
+        'SELECT user_id FROM user_sessions WHERE token_hash = $1 AND expires_at > NOW()',
+        [hashSessionToken(sessionToken)]
+      );
+      if (!session.rows[0]) return res.status(401).json({ success: false });
+
+      const [user] = await db.select().from(schema.users).where(sql`${schema.users.id} = ${session.rows[0].user_id}`).limit(1);
+      if (!user) {
+        await pool.query('DELETE FROM user_sessions WHERE token_hash = $1', [hashSessionToken(sessionToken)]);
+        return res.status(401).json({ success: false });
+      }
+      return res.json({ success: true, user });
+    } catch (error) {
+      console.error('Error restoring auth session:', error);
+      return res.status(500).json({ success: false });
+    }
+  });
+
+  app.post('/api/auth/logout', async (req, res) => {
     const sessionToken = getAuthSessionToken(req.headers.cookie);
-    if (sessionToken) authSessions.delete(sessionToken);
+    if (sessionToken && pool) {
+      try {
+        await pool.query('DELETE FROM user_sessions WHERE token_hash = $1', [hashSessionToken(sessionToken)]);
+      } catch (error) {
+        console.error('Error revoking auth session:', error);
+      }
+    }
     res.setHeader('Set-Cookie', `${authCookieName}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${authCookieOptions}`);
     return res.json({ success: true });
   });
@@ -539,13 +573,21 @@ async function startServer() {
 
       const rows = Array.isArray(req.body) ? normalizeRows(tableName, req.body) : [];
       const table = dataTables[tableName];
-      await db.delete(table);
-      if (rows.length > 0) {
-        await db.insert(table).values(rows as any[]);
-      }
+      // Xoá + ghi lại trong cùng transaction để không mất dữ liệu khi insert lỗi
+      await db.transaction(async (tx) => {
+        await tx.delete(table);
+        if (rows.length > 0) {
+          // Postgres chỉ nhận tối đa 65535 tham số bind cho mỗi câu lệnh
+          const columnCount = Math.max(1, Object.keys(rows[0] as object).length);
+          const chunkSize = Math.max(1, Math.floor(65000 / columnCount));
+          for (let i = 0; i < rows.length; i += chunkSize) {
+            await tx.insert(table).values(rows.slice(i, i + chunkSize) as any[]);
+          }
+        }
       if (tableName === 'units' || tableName === 'households') {
-        await syncUnitCountsFromHouseholds();
+            await syncUnitCountsFromHouseholds(tx);
       }
+        });
 
       res.json({ success: true, count: rows.length });
     } catch (error) {

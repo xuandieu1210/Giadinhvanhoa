@@ -44,6 +44,7 @@ export const ApprovalView: React.FC = () => {
     selectedPeriodId,
     getUnitProgress,
     approveAndLockUnit,
+    reopenFinalizedUnit,
     quickPassUnit,
     saveScore,
     batchScoreHouseholds,
@@ -71,6 +72,7 @@ export const ApprovalView: React.FC = () => {
     id: string;
     name: string;
     unitName?: string;
+    reopenFinalized?: boolean;
   } | null>(null);
 
   // Batch scoring for commune
@@ -183,7 +185,9 @@ export const ApprovalView: React.FC = () => {
   const handleConfirmReturn = (reason: string) => {
     if (!returnTarget) return;
     if (returnTarget.type === 'unit') {
-      const res = returnUnitSubmission(returnTarget.id, selectedPeriodId, reason);
+      const res = returnTarget.reopenFinalized
+        ? reopenFinalizedUnit(returnTarget.id, selectedPeriodId, reason)
+        : returnUnitSubmission(returnTarget.id, selectedPeriodId, reason);
       setToast({ type: res.success ? 'success' : 'error', message: res.message });
     } else {
       const res = returnHouseholdScore(returnTarget.id, selectedPeriodId, reason);
@@ -596,10 +600,26 @@ export const ApprovalView: React.FC = () => {
                 )}
 
                 {isLocked && (
-                  <div className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 bg-white px-3.5 py-2 rounded-lg border border-emerald-300">
-                    <Lock className="w-3.5 h-3.5 text-emerald-700" />
-                    Đã khóa bảo mật (Duyệt bởi: {activeUnitProg?.approvedBy || 'Cán bộ Xã'})
-                  </div>
+                  <>
+                    <div className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 bg-white px-3.5 py-2 rounded-lg border border-emerald-300">
+                      <Lock className="w-3.5 h-3.5 text-emerald-700" />
+                      Đã khóa (Duyệt bởi: {activeUnitProg?.approvedBy || 'Cán bộ Xã'})
+                    </div>
+                    {(currentUser?.role === 'admin' || currentUser?.role === 'can_bo_xa') && (
+                      <button
+                        onClick={() => setReturnTarget({
+                          type: 'unit',
+                          id: activeUnit.id,
+                          name: activeUnit.name,
+                          reopenFinalized: true,
+                        })}
+                        className="px-3.5 py-2 bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Mở khóa chấm lại
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -883,6 +903,7 @@ export const ApprovalView: React.FC = () => {
           targetType={returnTarget.type}
           targetName={returnTarget.name}
           unitName={returnTarget.unitName}
+          isReopenFinalized={returnTarget.reopenFinalized}
           onConfirm={handleConfirmReturn}
         />
       )}
